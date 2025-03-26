@@ -22,7 +22,7 @@ connectDB();
 
 // Enhanced CORS configuration
 app.use(cors({
-  origin: '*', // Allow all origins
+  origin: ['https://todo-frontend-nine-khaki.vercel.app', 'http://localhost:3000'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
   exposedHeaders: ['x-auth-token'],
