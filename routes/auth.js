@@ -6,107 +6,122 @@ const User = require('../models/User');
 
 // User registration - POST /api/register
 router.post('/register', async (req, res) => {
-  console.log('Registration attempt:', { ...req.body, password: '[HIDDEN]' });
+  console.log('Registration attempt started');
   
-  const { username, email, password } = req.body;
-
   try {
-    // Validate input
+    const { username, email, password } = req.body;
+
+    // 基本验证
     if (!username || !email || !password) {
       console.log('Missing required fields');
       return res.status(400).json({ msg: 'Please enter all fields' });
     }
 
+    // 检查用户是否存在
     console.log('Checking for existing user...');
-    let user = await User.findOne({ email });
-    if (user) {
+    const existingUser = await User.findOne({ email }).select('email');
+    
+    if (existingUser) {
       console.log('User already exists:', email);
       return res.status(400).json({ msg: 'User already exists' });
     }
 
-    console.log('Creating new user...');
-    user = new User({ username, email, password });
+    // 创建新用户
+    console.log('Creating new user object...');
+    const newUser = new User({
+      username,
+      email,
+      password: await bcrypt.hash(password, 10)
+    });
 
-    // Hash password
-    console.log('Hashing password...');
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-
+    // 保存用户
     console.log('Saving user to database...');
-    await user.save();
+    const savedUser = await newUser.save();
+    console.log('User saved successfully');
 
-    console.log('Generating JWT...');
-    const payload = { user: { id: user.id } };
-    jwt.sign(
-      payload,
+    // 生成token
+    console.log('Generating token...');
+    const token = jwt.sign(
+      { user: { id: savedUser.id } },
       process.env.JWT_SECRET || 'default_secret',
-      { expiresIn: '1h' },
-      (err, token) => {
-        if (err) {
-          console.error('JWT Error:', err);
-          throw err;
-        }
-        console.log('Registration successful');
-        res.json({ token });
-      }
+      { expiresIn: '1h' }
     );
+
+    console.log('Registration completed successfully');
+    return res.status(201).json({ token });
+
   } catch (err) {
-    console.error('Registration error:', err);
-    res.status(500).json({
-      msg: 'Server error',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    console.error('Registration error details:', {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    });
+
+    // MongoDB 重复键错误
+    if (err.code === 11000) {
+      return res.status(400).json({ msg: 'User already exists' });
+    }
+
+    // 其他错误
+    return res.status(500).json({
+      msg: 'Server error during registration',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });
   }
 });
 
 // User login - POST /api/login
 router.post('/login', async (req, res) => {
-  console.log('Login attempt:', { ...req.body, password: '[HIDDEN]' });
+  console.log('Login attempt started');
   
-  const { email, password } = req.body;
-
   try {
-    // Validate input
+    const { email, password } = req.body;
+
+    // 基本验证
     if (!email || !password) {
       console.log('Missing required fields');
       return res.status(400).json({ msg: 'Please enter all fields' });
     }
 
+    // 查找用户
     console.log('Finding user...');
     const user = await User.findOne({ email });
+    
     if (!user) {
-      console.log('User not found:', email);
+      console.log('User not found');
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    console.log('Comparing password...');
+    // 验证密码
+    console.log('Verifying password...');
     const isMatch = await bcrypt.compare(password, user.password);
+    
     if (!isMatch) {
-      console.log('Invalid password for:', email);
+      console.log('Invalid password');
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    console.log('Generating JWT...');
-    const payload = { user: { id: user.id } };
-
-    jwt.sign(
-      payload,
+    // 生成token
+    console.log('Generating token...');
+    const token = jwt.sign(
+      { user: { id: user.id } },
       process.env.JWT_SECRET || 'default_secret',
-      { expiresIn: '1h' },
-      (err, token) => {
-        if (err) {
-          console.error('JWT Error:', err);
-          throw err;
-        }
-        console.log('Login successful for:', email);
-        res.json({ token });
-      }
+      { expiresIn: '1h' }
     );
+
+    console.log('Login successful');
+    return res.json({ token });
+
   } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({
-      msg: 'Server error',
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    console.error('Login error details:', {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    });
+
+    return res.status(500).json({
+      msg: 'Server error during login',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });
   }
 });
