@@ -1,10 +1,14 @@
 // Load env variables first
 require('dotenv').config();
 
-// Log environment variables for debugging
-console.log('Environment Check:');
+// Enhanced environment variable logging
+console.log('=== Environment Variables Check ===');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
+console.log('MONGODB_URI first 10 chars:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 10) + '...' : 'not set');
+console.log('Available env vars:', Object.keys(process.env).filter(key => !key.includes('SECRET')));
+console.log('Process env location:', process.env.VERCEL ? 'Vercel' : 'Local');
+console.log('================================');
 
 const express = require('express');
 const cors = require('cors');
@@ -103,52 +107,60 @@ const updateExpiredTasks = async () => {
   }
 };
 
-// Start server and connect to database
-const PORT = process.env.PORT || 5001;
-
-const startServer = async () => {
-  try {
-    // 先连接数据库
-    await connectDB();
-    
-    // 启动服务器
-    const server = app.listen(PORT, () => {
-      console.log(`Server started on port: ${PORT}`);
+// 条件启动服务器（仅在非Vercel环境下）
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5001;
+  
+  const startServer = async () => {
+    try {
+      // 先连接数据库
+      await connectDB();
       
-      // 运行定时任务
-      updateExpiredTasks();
-      setInterval(updateExpiredTasks, 60 * 60 * 1000);
-    });
-
-    // Graceful shutdown
-    const shutdown = async () => {
-      console.log('Received shutdown signal');
-      
-      // 关闭服务器
-      server.close(() => {
-        console.log('Server closed');
+      // 启动服务器
+      const server = app.listen(PORT, () => {
+        console.log(`Server started on port: ${PORT}`);
         
-        // 关闭数据库连接
-        mongoose.connection.close(false, () => {
-          console.log('MongoDB connection closed');
-          process.exit(0);
-        });
+        // 运行定时任务
+        updateExpiredTasks();
+        setInterval(updateExpiredTasks, 60 * 60 * 1000);
       });
+  
+      // Graceful shutdown
+      const shutdown = async () => {
+        console.log('Received shutdown signal');
+        
+        // 关闭服务器
+        server.close(() => {
+          console.log('Server closed');
+          
+          // 关闭数据库连接
+          mongoose.connection.close(false, () => {
+            console.log('MongoDB connection closed');
+            process.exit(0);
+          });
+        });
+  
+        // 如果5秒内没有正常关闭，强制退出
+        setTimeout(() => {
+          console.error('Could not close connections in time, forcefully shutting down');
+          process.exit(1);
+        }, 5000);
+      };
+  
+      process.on('SIGTERM', shutdown);
+      process.on('SIGINT', shutdown);
+  
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      process.exit(1);
+    }
+  };
+  
+  startServer();
+} else {
+  // 在Vercel环境中，仅连接数据库
+  connectDB().catch(err => console.error('Failed to connect to database:', err));
+}
 
-      // 如果5秒内没有正常关闭，强制退出
-      setTimeout(() => {
-        console.error('Could not close connections in time, forcefully shutting down');
-        process.exit(1);
-      }, 5000);
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
-  }
-};
-
-startServer();
+// 为Vercel导出Express应用实例
+module.exports = app;
