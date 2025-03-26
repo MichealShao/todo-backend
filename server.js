@@ -107,6 +107,19 @@ const updateExpiredTasks = async () => {
   }
 };
 
+// 为保证在Vercel环境中有一个数据库连接
+// 在模块作用域中直接调用连接函数
+if (process.env.VERCEL) {
+  console.log('In Vercel environment, connecting to database...');
+  connectDB()
+    .then(() => {
+      console.log('Successfully connected to database in Vercel environment');
+    })
+    .catch(err => {
+      console.error('Failed to connect to database in Vercel environment:', err);
+    });
+}
+
 // 条件启动服务器（仅在非Vercel环境下）
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 5001;
@@ -157,9 +170,6 @@ if (!process.env.VERCEL) {
   };
   
   startServer();
-} else {
-  // 在Vercel环境中，仅连接数据库
-  connectDB().catch(err => console.error('Failed to connect to database:', err));
 }
 
 // 为Vercel导出Express应用实例
