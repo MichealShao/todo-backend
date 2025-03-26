@@ -40,8 +40,30 @@ app.use('/api', authRoutes);
 app.use('/api/tasks', taskRoutes);  
 
 // Add root route handler
-app.get('/', (req, res) => {
-  res.json({ message: 'Todo API is running' });
+app.get('/', async (req, res) => {
+  try {
+    const dbState = mongoose.STATES[mongoose.connection.readyState];
+    const connectionInfo = {
+      message: 'Todo API is running',
+      database: {
+        state: dbState,
+        connected: mongoose.connection.readyState === 1,
+        host: mongoose.connection.host,
+        name: mongoose.connection.name,
+        models: Object.keys(mongoose.models)
+      },
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        mongoDbUri: process.env.MONGODB_URI ? '已配置' : '未配置'
+      }
+    };
+    res.json(connectionInfo);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error checking database status',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
 });
 
 // Add 404 handler
