@@ -1,4 +1,11 @@
+// Load env variables first
 require('dotenv').config();
+
+// Log environment variables for debugging
+console.log('Environment Check:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -34,6 +41,17 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api', authRoutes);       
 app.use('/api/tasks', taskRoutes);  
+
+// Add root route handler
+app.get('/', (req, res) => {
+  res.json({ message: 'Todo API is running' });
+});
+
+// Add 404 handler
+app.use((req, res) => {
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ message: `Route ${req.url} not found` });
+});
 
 // Function to periodically check for expired tasks
 const updateExpiredTasks = async () => {
