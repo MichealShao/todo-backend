@@ -12,10 +12,20 @@ const connectDB = async () => {
     
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
-      useUnifiedTopology: true
+      useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 5000, // 超时时间5秒
+      socketTimeoutMS: 45000, // 45秒后超时
+      connectTimeoutMS: 10000, // 连接超时10秒
+      keepAlive: true,
+      keepAliveInitialDelay: 300000
     });
 
     console.log(`MongoDB connected: ${conn.connection.host}`);
+    
+    // 设置mongoose全局配置
+    mongoose.set('bufferCommands', false);
+    
+    return conn;
   } catch (err) {
     console.error('MongoDB connection failed:');
     console.error('Error message:', err.message);
