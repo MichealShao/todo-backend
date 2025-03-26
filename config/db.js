@@ -8,28 +8,34 @@ const connectDB = async () => {
     }
 
     console.log('Attempting to connect to MongoDB...');
-    console.log('MongoDB URI exists:', !!process.env.MONGODB_URI);
     
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000, // 超时时间5秒
-      socketTimeoutMS: 45000, // 45秒后超时
-      connectTimeoutMS: 10000, // 连接超时10秒
+      serverSelectionTimeoutMS: 10000, // 增加到10秒
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,
       keepAlive: true,
       keepAliveInitialDelay: 300000
     });
 
-    console.log(`MongoDB connected: ${conn.connection.host}`);
+    console.log('=== MongoDB Connection Info ===');
+    console.log(`Connected to host: ${conn.connection.host}`);
+    console.log(`Database name: ${conn.connection.name}`);
+    console.log(`Connection state: ${conn.connection.readyState}`);
+    console.log('==============================');
     
     // 设置mongoose全局配置
     mongoose.set('bufferCommands', false);
     
     return conn;
   } catch (err) {
-    console.error('MongoDB connection failed:');
+    console.error('=== MongoDB Connection Error ===');
     console.error('Error message:', err.message);
-    console.error('Error details:', err);
+    console.error('Error name:', err.name);
+    console.error('Full error:', err);
+    console.error('==============================');
+    
     // Don't exit process in production
     if (process.env.NODE_ENV === 'production') {
       console.error('Connection error in production, but keeping server alive');
