@@ -9,16 +9,10 @@ console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-
-const authRoutes = require('./routes/auth');
-const taskRoutes = require('./routes/tasks');
 const connectDB = require('./config/db');
 const Task = require('./models/Task');
 
 const app = express();
-
-// Connect to database
-connectDB();
 
 // Enhanced CORS configuration
 app.use(cors({
@@ -39,6 +33,9 @@ app.use((req, res, next) => {
 });
 
 // Routes
+const authRoutes = require('./routes/auth');
+const taskRoutes = require('./routes/tasks');
+
 app.use('/api', authRoutes);       
 app.use('/api/tasks', taskRoutes);  
 
@@ -58,7 +55,6 @@ const updateExpiredTasks = async () => {
   try {
     console.log('Starting to check for expired tasks...');
     
-    // Find all tasks with deadline passed but status not set to Expired
     const now = new Date();
     const tasksToUpdate = await Task.find({
       deadline: { $lt: now },
@@ -66,9 +62,8 @@ const updateExpiredTasks = async () => {
     });
     
     if (tasksToUpdate.length > 0) {
-      console.log(`Scheduled check: Found ${tasksToUpdate.length} expired tasks, updating status to Expired`);
+      console.log(`Found ${tasksToUpdate.length} expired tasks, updating status to Expired`);
       
-      // Batch update these tasks to Expired status
       const result = await Task.updateMany(
         { 
           _id: { $in: tasksToUpdate.map(t => t._id) },
@@ -86,23 +81,52 @@ const updateExpiredTasks = async () => {
   }
 };
 
-// Start server
+// Start server and connect to database
 const PORT = process.env.PORT || 5001;
-const server = app.listen(PORT, () => {
-  console.log(`Server started on port: ${PORT}`);
-  
-  // Run check immediately
-  updateExpiredTasks();
-  
-  // Set up scheduled task to check for expired tasks every hour
-  setInterval(updateExpiredTasks, 60 * 60 * 1000);
-});
 
-// Graceful server shutdown
-process.on('SIGINT', () => {
-  console.log('Received shutdown signal, closing server...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+const startServer = async () => {
+  try {
+    // 先连接数据库
+    await connectDB();
+    
+    // 启动服务器
+    const server = app.listen(PORT, () => {
+      console.log(`Server started on port: ${PORT}`);
+      
+      // 运行定时任务
+      updateExpiredTasks();
+      setInterval(updateExpiredTasks, 60 * 60 * 1000);
+    });
+
+    // Graceful shutdown
+    const shutdown = async () => {
+      console.log('Received shutdown signal');
+      
+      // 关闭服务器
+      server.close(() => {
+        console.log('Server closed');
+        
+        // 关闭数据库连接
+        mongoose.connection.close(false, () => {
+          console.log('MongoDB connection closed');
+          process.exit(0);
+        });
+      });
+
+      // 如果5秒内没有正常关闭，强制退出
+      setTimeout(() => {
+        console.error('Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+      }, 5000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+startServer();

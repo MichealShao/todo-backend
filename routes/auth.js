@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
@@ -28,11 +27,8 @@ router.post('/register', async (req, res) => {
 
     // 创建新用户
     console.log('Creating new user object...');
-    const newUser = new User({
-      username,
-      email,
-      password: await bcrypt.hash(password, 10)
-    });
+    const newUser = new User({ username, email });
+    newUser.password = newUser.hashPassword(password);
 
     // 保存用户
     console.log('Saving user to database...');
@@ -94,9 +90,7 @@ router.post('/login', async (req, res) => {
 
     // 验证密码
     console.log('Verifying password...');
-    const isMatch = await bcrypt.compare(password, user.password);
-    
-    if (!isMatch) {
+    if (!user.validatePassword(password)) {
       console.log('Invalid password');
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
