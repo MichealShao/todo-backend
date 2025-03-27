@@ -2,11 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
-const verifyTaskOwnership = require('../middleware/taskOwnership');
-const dateUtils = require('../utils/dateUtils');
-const taskUtils = require('../utils/taskUtils');
-const logger = require('../utils/logger');
-const responseHandler = require('../utils/responseHandler');
+const mongoose = require('mongoose');
 
 // Helper function to check if a task is expired
 const checkTaskExpired = (task) => {
@@ -92,11 +88,33 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
   try {
     // Only execute this operation after user authentication
     if (req.user && req.user.id) {
-      await taskUtils.updateExpiredTasksForUser(req.user.id);
+      // 获取今天的日期（去除时间部分）
+      const now = new Date();
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Find all tasks with deadline passed but status not yet set to Expired
+      const tasksToUpdate = await Task.find({
+        user: req.user.id,
+        deadline: { $lt: todayDate }, // 使用今天的日期（不含时间）作为比较
+        status: { $ne: 'Expired' }
+      });
+      
+      if (tasksToUpdate.length > 0) {
+        console.log(`Found ${tasksToUpdate.length} expired tasks, updating status`);
+        
+        // Batch update these tasks to Expired status
+        await Task.updateMany(
+          { 
+            _id: { $in: tasksToUpdate.map(t => t._id) },
+            user: req.user.id
+          },
+          { $set: { status: 'Expired' } }
+        );
+      }
     }
     next();
   } catch (err) {
-    logger.error('Error updating expired status', err);
+    console.error('Error updating expired status:', err);
     next(); // Continue processing the request even if update fails
   }
 };
@@ -109,7 +127,7 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
     const sortField = req.query.sortField || 'createdAt';
     const sortDirection = req.query.sortDirection || 'desc';
     
-    // Status filtering
+    // Added: Status filtering
     const statusFilter = req.query.status ? req.query.status.split(',') : null;
     
     const skip = (page - 1) * limit;
@@ -135,7 +153,7 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
       .skip(skip)
       .limit(limit);
       
-    return responseHandler.success(res, {
+    res.json({
       tasks,
       pagination: {
         total,
@@ -145,27 +163,36 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
       }
     });
   } catch (err) {
-    logger.error('Error getting tasks', err);
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
 // Get a single task by ID - GET /api/tasks/:id
-router.get('/:id', auth, verifyTaskOwnership, async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
-    // Task is already available in req.task from verifyTaskOwnership middleware
-    const task = req.task;
+    const task = await Task.findById(req.params.id);
+    
+    if (!task) return res.status(404).json({ msg: 'Task not found' });
+    
+    // Check if task belongs to current user
+    if (task.user.toString() !== req.user.id) {
+      return res.status(401).json({ msg: 'Unauthorized' });
+    }
     
     // Check if task needs to be updated to expired status
-    if (taskUtils.isTaskExpired(task)) {
+    if (checkTaskExpired(task)) {
       task.status = 'Expired';
       await task.save();
     }
     
-    return responseHandler.success(res, task);
+    res.json(task);
   } catch (err) {
-    logger.error('Error getting task details', err);
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error(err.message);
+    if (err.kind === 'ObjectId') {
+      return res.status(404).json({ msg: 'Task not found' });
+    }
+    res.status(500).send('Server error');
   }
 });
 
@@ -175,18 +202,35 @@ router.post('/', auth, async (req, res) => {
   
   // Validate input
   if (!priority || !deadline || !hours || !details) {
-    return responseHandler.validationError(res, 'Please provide all required fields');
+    return res.status(400).json({ msg: 'Please provide all required fields' });
   }
   
   try {
     // Check if user is trying to create an already expired task
     let initialStatus = status || 'Pending';
     
-    // Fix timezone issues - handle deadline to preserve user's selected date
-    let deadlineDate = dateUtils.createFixedDate(deadline);
+    // 修复时区问题 - 处理deadline以保留用户选择的日期
+    let deadlineDate = new Date(deadline);
+    // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
+    const deadlineYear = deadlineDate.getFullYear();
+    const deadlineMonth = deadlineDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+    const deadlineDay = deadlineDate.getDate();
+    const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+    deadlineDate = new Date(deadlineDateStr);
+    
+    // 获取今天的日期（去除时间部分）
+    const now = new Date();
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    // 获取截止日期（去除时间部分）
+    const deadlineDateOnly = new Date(
+      deadlineDate.getFullYear(), 
+      deadlineDate.getMonth(), 
+      deadlineDate.getDate()
+    );
     
     // If deadline is strictly before today, automatically set to Expired
-    if (dateUtils.isBeforeToday(deadlineDate)) {
+    if (deadlineDateOnly < todayDate) {
       initialStatus = 'Expired';
     } 
     // Prevent users from manually setting status to Expired
@@ -194,19 +238,37 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // Process start_time based on task status
+    // 修复start_time时区问题，采用与deadline完全相同的处理方式
     let fixedStartTime = null;
     if (start_time && initialStatus !== 'Pending') {
-      fixedStartTime = dateUtils.createFixedDate(start_time);
-      logger.debug('Fixed start_time', fixedStartTime);
+      // 处理时区问题，确保日期不变
+      let startTimeDate = new Date(start_time);
+      
+      // 修复时区问题 - 使用用户选择的确切日期
+      const startYear = startTimeDate.getFullYear();
+      const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const startDay = startTimeDate.getDate();
+      
+      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+      fixedStartTime = new Date(startDateStr);
+      
+      console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress' && !start_time) {
-      // If status is In Progress but no start_time provided, use current time
-      fixedStartTime = dateUtils.createFixedDate(new Date());
+      // 如果状态是In Progress但没有提供start_time，使用当前时间
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const day = now.getDate();
+      
+      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+      fixedStartTime = new Date(todayDateStr);
     }
     
     const newTask = new Task({
       priority,
-      deadline: deadlineDate, // Use fixed deadline date
+      deadline: deadlineDate, // 使用修正后的deadline日期
       hours,
       details,
       status: initialStatus,
@@ -215,44 +277,162 @@ router.post('/', auth, async (req, res) => {
     });
     
     const task = await newTask.save();
-    return responseHandler.success(res, task, 'Task created successfully', 201);
+    res.json(task);
   } catch (err) {
-    logger.error('Error creating task', err);
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
 // Update a task - PUT /api/tasks/:id
-router.put('/:id', auth, verifyTaskOwnership, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
-    logger.debug('Update task request body', req.body);
+    console.log('Update task request body:', req.body); // Log complete request body for debugging
     
-    // Task is already available in req.task from verifyTaskOwnership middleware
-    const task = req.task;
-    const updateFields = req.body;
+    // Extract all possible fields
+    const { priority, deadline, hours, details, status, start_time } = req.body;
     
-    // Validate and process update fields
-    const taskFields = taskUtils.validateTaskUpdate(task, updateFields);
+    // Find existing task
+    let task = await Task.findById(req.params.id);
     
-    logger.debug('Processed update fields', taskFields);
+    if (!task) {
+      console.log('Task not found:', req.params.id);
+      return res.status(404).json({ msg: 'Task not found' });
+    }
     
-    // Use findOneAndUpdate for atomicity
-    const updatedTask = await Task.findOneAndUpdate(
+    // Ensure task belongs to current user
+    if (task.user.toString() !== req.user.id) {
+      console.log('Unauthorized access');
+      return res.status(401).json({ msg: 'Unauthorized' });
+    }
+    
+    // Build task fields object
+    const taskFields = {};
+    if (priority) taskFields.priority = priority;
+    if (hours) taskFields.hours = hours;
+    if (details) taskFields.details = details;
+    
+    // 修复时区问题 - 处理deadline
+    if (deadline) {
+      // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
+      let deadlineDate = new Date(deadline);
+      const deadlineYear = deadlineDate.getFullYear();
+      const deadlineMonth = deadlineDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const deadlineDay = deadlineDate.getDate();
+      const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+      taskFields.deadline = new Date(deadlineDateStr);
+    }
+    
+    // 修复 start_time 的处理逻辑，采用与deadline完全相同的处理方式
+    // 检查 start_time 是否直接作为参数提供，与状态无关
+    if (start_time !== undefined) {
+      console.log('Directly processing start_time update:', start_time);
+      try {
+        if (status === 'Pending' || task.status === 'Pending' && status === undefined) {
+          // 如果当前状态是Pending或要更新为Pending，start_time应为null
+          taskFields.start_time = null;
+          console.log('Setting start_time to null for Pending status');
+        } else if (start_time) {
+          // 处理 start_time 时区问题，与deadline完全一致
+          let startTimeDate = new Date(start_time);
+          
+          // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
+          const startYear = startTimeDate.getFullYear();
+          const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+          const startDay = startTimeDate.getDate();
+          
+          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+          taskFields.start_time = new Date(startDateStr);
+          
+          console.log('New start_time set to:', taskFields.start_time);
+        } else {
+          // 如果明确设置为null且状态不是Pending
+          console.log('Warning: Setting start_time to null for non-Pending task');
+          taskFields.start_time = null;
+        }
+      } catch (error) {
+        console.error('Error processing start_time:', error);
+        return res.status(400).json({ msg: 'Invalid start_time format' });
+      }
+    }
+    
+    // Special handling for status field, prevent setting to Expired manually
+    if (status !== undefined) {
+      // If user tries to set status to Expired, ignore this operation
+      if (status !== 'Expired') {
+        taskFields.status = status;
+        console.log('Will update status field to:', status);
+        
+        // Handle start_time based on status change
+        try {
+          // 只有在未明确提供 start_time 时，才通过状态变更自动设置 start_time
+          if (start_time === undefined) {
+            const validatedStartTime = validateStartTime(status, task.start_time, task.status);
+            taskFields.start_time = validatedStartTime;
+            console.log('Validated start_time from status change:', validatedStartTime);
+          }
+        } catch (error) {
+          return res.status(400).json({ msg: error.message });
+        }
+      } else {
+        console.log('User tried to set task status to Expired manually, ignored');
+      }
+    }
+    
+    console.log('Update fields:', taskFields);
+    
+    // Check deadline, if a new deadline is set, check if it's already expired
+    if (deadline) {
+      // 获取今天的日期（去除时间部分）
+      const now = new Date();
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // 获取新截止日期（去除时间部分）
+      const deadlineDate = new Date(taskFields.deadline);
+      const deadlineDateOnly = new Date(
+        deadlineDate.getFullYear(), 
+        deadlineDate.getMonth(), 
+        deadlineDate.getDate()
+      );
+      
+      if (deadlineDateOnly < todayDate) {
+        // If new deadline is strictly before today, automatically set to Expired
+        taskFields.status = 'Expired';
+        console.log('New deadline is in the past, automatically setting status to Expired');
+      }
+    } else {
+      // If deadline isn't updated, check if existing deadline is expired
+      // 获取今天的日期（去除时间部分）
+      const now = new Date();
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // 获取现有截止日期（去除时间部分）
+      const existingDeadline = new Date(task.deadline);
+      const existingDeadlineDateOnly = new Date(
+        existingDeadline.getFullYear(), 
+        existingDeadline.getMonth(), 
+        existingDeadline.getDate()
+      );
+      
+      if (existingDeadlineDateOnly < todayDate && task.status !== 'Expired') {
+        taskFields.status = 'Expired';
+        console.log('Existing deadline is in the past, automatically setting status to Expired');
+      }
+    }
+
+    // Use findOneAndUpdate instead of findByIdAndUpdate
+    task = await Task.findOneAndUpdate(
       { _id: req.params.id },
       { $set: taskFields },
       { new: true, runValidators: true }
     );
     
-    logger.debug('Updated task', updatedTask);
-    return responseHandler.success(res, updatedTask);
+    console.log('Updated task:', task);
+    res.json(task);
   } catch (err) {
-    logger.error('Error updating task', err);
-    
-    if (err.message.includes('Start time cannot be earlier than today')) {
-      return responseHandler.validationError(res, err.message);
-    }
-    
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error('Error updating task:', err);
+    res.status(500).send('Server error: ' + err.message);
   }
 });
 
@@ -262,19 +442,19 @@ router.put('/batch-update/status', auth, async (req, res) => {
   
   // Validate input
   if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0 || !status) {
-    return responseHandler.validationError(res, 'Please provide valid task ID array and status');
+    return res.status(400).json({ msg: 'Please provide valid task ID array and status' });
   }
   
   // Prevent batch setting status to Expired
   if (status === 'Expired') {
-    return responseHandler.validationError(res, 'Not allowed to manually set tasks to Expired status');
+    return res.status(400).json({ msg: 'Not allowed to manually set tasks to Expired status' });
   }
   
   try {
     // Validate status value
     const validStatuses = ['Pending', 'In Progress', 'Completed'];
     if (!validStatuses.includes(status)) {
-      return responseHandler.validationError(res, 'Invalid status value');
+      return res.status(400).json({ msg: 'Invalid status value' });
     }
     
     // Find tasks that belong to current user
@@ -285,7 +465,7 @@ router.put('/batch-update/status', auth, async (req, res) => {
     
     // If no tasks found, return error
     if (tasks.length === 0) {
-      return responseHandler.notFound(res, 'No specified tasks found');
+      return res.status(404).json({ msg: 'No specified tasks found' });
     }
     
     // Get IDs of tasks found
@@ -305,7 +485,15 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
-          const fixedDate = dateUtils.createFixedDate(new Date());
+          // 修复时区问题 - 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          const currentDate = new Date();
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+          const day = currentDate.getDate();
+          
+          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+          const fixedDate = new Date(todayDateStr);
           
           await Task.updateOne(
             { _id: taskId },
@@ -327,36 +515,62 @@ router.put('/batch-update/status', auth, async (req, res) => {
       );
     }
     
-    return responseHandler.success(res, { 
+    res.json({ 
+      msg: 'Task status updated',
       updatedTasks: foundTaskIds,
       status
-    }, 'Task status updated');
+    });
   } catch (err) {
-    logger.error('Error batch updating task status', err);
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error(err.message);
+    res.status(500).send('Server error');
   }
 });
 
 // Delete a task - DELETE /api/tasks/:id
-router.delete('/:id', auth, verifyTaskOwnership, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
-    logger.debug('Processing delete request', { taskId: req.params.id });
+    console.log('Processing delete request, task ID:', req.params.id);
+    console.log('Current user ID:', req.user.id);
     
-    // Task is already available in req.task from verifyTaskOwnership middleware
+    // Use ID string directly without trying to convert to ObjectId
+    const taskId = req.params.id;
     
-    // Use findByIdAndDelete method
-    const result = await Task.findByIdAndDelete(req.params.id);
+    // Use findById which is simpler and reliable
+    let task = await Task.findById(taskId);
     
-    if (!result) {
-      logger.warn('Delete operation did not delete any document');
-      return responseHandler.notFound(res, 'Delete failed, task may have been already deleted');
+    if (!task) {
+      console.log('Task not found:', req.params.id);
+      return res.status(404).json({ msg: 'Task not found' });
     }
     
-    logger.debug('Task deleted successfully', result);
-    return responseHandler.success(res, null, 'Task deleted');
+    console.log('Found task:', task);
+    console.log('Task owner ID:', task.user.toString());
+    
+    // Ensure task belongs to user
+    if (task.user.toString() !== req.user.id) {
+      console.log('User not authorized to delete this task');
+      return res.status(401).json({ msg: 'Unauthorized' });
+    }
+    
+    console.log('Starting task deletion...');
+    
+    // Use findByIdAndDelete method
+    const result = await Task.findByIdAndDelete(taskId);
+    
+    if (!result) {
+      console.log('Delete operation did not delete any document');
+      return res.status(404).json({ msg: 'Delete failed, task may have been already deleted' });
+    }
+    
+    console.log('Task deleted successfully, result:', result);
+    res.json({ msg: 'Task deleted' });
   } catch (err) {
-    logger.error('Error deleting task', err);
-    return responseHandler.error(res, 'Server error', 500, err);
+    console.error('Error deleting task:', err);
+    res.status(500).json({ 
+      msg: 'Server error', 
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 

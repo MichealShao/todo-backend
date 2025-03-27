@@ -1,25 +1,20 @@
 // Load env variables first
 require('dotenv').config();
 
-// Import logger utility
-const logger = require('./utils/logger');
-
-// Environment variables check
-logger.info('=== Environment Variables Check ===');
-logger.info(`NODE_ENV: ${process.env.NODE_ENV}`);
-logger.info(`MONGODB_URI exists: ${!!process.env.MONGODB_URI}`);
-logger.info(`MONGODB_URI first 10 chars: ${process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 10) + '...' : 'not set'}`);
-logger.info(`Available env vars: ${Object.keys(process.env).filter(key => !key.includes('SECRET'))}`);
-logger.info(`Process env location: ${process.env.VERCEL ? 'Vercel' : 'Local'}`);
-logger.info('================================');
+// Enhanced environment variable logging
+console.log('=== Environment Variables Check ===');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
+console.log('MONGODB_URI first 10 chars:', process.env.MONGODB_URI ? process.env.MONGODB_URI.substring(0, 10) + '...' : 'not set');
+console.log('Available env vars:', Object.keys(process.env).filter(key => !key.includes('SECRET')));
+console.log('Process env location:', process.env.VERCEL ? 'Vercel' : 'Local');
+console.log('================================');
 
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const Task = require('./models/Task');
-const taskUtils = require('./utils/taskUtils');
-const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -35,9 +30,9 @@ app.use(cors({
 // Middleware
 app.use(express.json());
 
-// Request logging middleware
+// Middleware to log all requests
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.originalUrl}`);
+  console.log(`${new Date().toISOString()} | ${req.method} ${req.originalUrl}`);
   next();
 });
 
@@ -63,12 +58,11 @@ app.get('/', async (req, res) => {
       },
       environment: {
         nodeEnv: process.env.NODE_ENV,
-        mongoDbUri: process.env.MONGODB_URI ? 'Configured' : 'Not configured'
+        mongoDbUri: process.env.MONGODB_URI ? '已配置' : '未配置'
       }
     };
     res.json(connectionInfo);
   } catch (error) {
-    logger.error('Error checking database status', error);
     res.status(500).json({
       message: 'Error checking database status',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
@@ -78,29 +72,23 @@ app.get('/', async (req, res) => {
 
 // Add 404 handler
 app.use((req, res) => {
-  logger.warn(`404 Not Found: ${req.method} ${req.url}`);
+  console.log(`404 Not Found: ${req.method} ${req.url}`);
   res.status(404).json({ message: `Route ${req.url} not found` });
 });
-
-// Global error handler
-app.use(errorHandler);
 
 // Function to periodically check for expired tasks
 const updateExpiredTasks = async () => {
   try {
-    logger.info('Starting to check for expired tasks...');
+    console.log('Starting to check for expired tasks...');
     
-    // Get today's date without time component
-    const todayDate = new Date();
-    todayDate.setHours(0, 0, 0, 0);
-    
+    const now = new Date();
     const tasksToUpdate = await Task.find({
-      deadline: { $lt: todayDate },
+      deadline: { $lt: now },
       status: { $ne: 'Expired' }
     });
     
     if (tasksToUpdate.length > 0) {
-      logger.info(`Found ${tasksToUpdate.length} expired tasks, updating status to Expired`);
+      console.log(`Found ${tasksToUpdate.length} expired tasks, updating status to Expired`);
       
       const result = await Task.updateMany(
         { 
@@ -110,64 +98,64 @@ const updateExpiredTasks = async () => {
         { $set: { status: 'Expired' } }
       );
       
-      logger.info(`Updated ${result.nModified || result.modifiedCount || 0} tasks to Expired status`);
+      console.log(`Updated ${result.nModified} tasks to Expired status`);
     } else {
-      logger.info('No tasks found that need status updates');
+      console.log('No tasks found that need status updates');
     }
   } catch (error) {
-    logger.error('Error updating expired tasks', error);
+    console.error('Error updating expired tasks:', error);
   }
 };
 
-// Ensure database connection in Vercel environment
-// Direct connection in module scope for Vercel
+// 为保证在Vercel环境中有一个数据库连接
+// 在模块作用域中直接调用连接函数
 if (process.env.VERCEL) {
-  logger.info('In Vercel environment, connecting to database...');
+  console.log('In Vercel environment, connecting to database...');
   connectDB()
     .then(() => {
-      logger.info('Successfully connected to database in Vercel environment');
+      console.log('Successfully connected to database in Vercel environment');
     })
     .catch(err => {
-      logger.error('Failed to connect to database in Vercel environment', err);
+      console.error('Failed to connect to database in Vercel environment:', err);
     });
 }
 
-// Conditional server startup (only in non-Vercel environment)
+// 条件启动服务器（仅在非Vercel环境下）
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 5001;
   
   const startServer = async () => {
     try {
-      // Connect to database first
+      // 先连接数据库
       await connectDB();
       
-      // Start server
+      // 启动服务器
       const server = app.listen(PORT, () => {
-        logger.info(`Server started on port: ${PORT}`);
+        console.log(`Server started on port: ${PORT}`);
         
-        // Run scheduled tasks
+        // 运行定时任务
         updateExpiredTasks();
-        setInterval(updateExpiredTasks, 60 * 60 * 1000); // Run every hour
+        setInterval(updateExpiredTasks, 60 * 60 * 1000);
       });
   
       // Graceful shutdown
       const shutdown = async () => {
-        logger.info('Received shutdown signal');
+        console.log('Received shutdown signal');
         
-        // Close server
+        // 关闭服务器
         server.close(() => {
-          logger.info('Server closed');
+          console.log('Server closed');
           
-          // Close database connection
+          // 关闭数据库连接
           mongoose.connection.close(false, () => {
-            logger.info('MongoDB connection closed');
+            console.log('MongoDB connection closed');
             process.exit(0);
           });
         });
   
-        // Force exit if not closed within 5 seconds
+        // 如果5秒内没有正常关闭，强制退出
         setTimeout(() => {
-          logger.error('Could not close connections in time, forcefully shutting down');
+          console.error('Could not close connections in time, forcefully shutting down');
           process.exit(1);
         }, 5000);
       };
@@ -176,7 +164,7 @@ if (!process.env.VERCEL) {
       process.on('SIGINT', shutdown);
   
     } catch (error) {
-      logger.error('Failed to start server', error);
+      console.error('Failed to start server:', error);
       process.exit(1);
     }
   };
@@ -184,5 +172,5 @@ if (!process.env.VERCEL) {
   startServer();
 }
 
-// Export Express app instance for Vercel
+// 为Vercel导出Express应用实例
 module.exports = app;
