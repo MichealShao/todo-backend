@@ -40,6 +40,12 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     }
   }
   
+  // If it's a direct update of start_time (not through status change)
+  if (start_time !== undefined && start_time !== null && status !== 'Pending') {
+    const startDate = new Date(start_time);
+    return startDate;
+  }
+  
   // For Completed and Expired status, keep the existing start_time
   return start_time;
 };
@@ -254,6 +260,30 @@ router.put('/:id', auth, async (req, res) => {
       taskFields.deadline = deadlineDate;
     }
     
+    // 修复 start_time 的处理逻辑
+    // 检查 start_time 是否直接作为参数提供，与状态无关
+    if (start_time !== undefined && task.status !== 'Pending') {
+      console.log('Directly processing start_time update:', start_time);
+      try {
+        // 处理 start_time 时区问题
+        if (start_time) {
+          let startTimeDate = new Date(start_time);
+          taskFields.start_time = startTimeDate;
+          console.log('New start_time set to:', startTimeDate);
+        } else {
+          // 如果 start_time 被明确设置为 null，且状态不是 Pending
+          if (task.status !== 'Pending') {
+            console.log('Warning: Cannot set start_time to null for non-Pending tasks');
+          } else {
+            taskFields.start_time = null;
+          }
+        }
+      } catch (error) {
+        console.error('Error processing start_time:', error);
+        return res.status(400).json({ msg: 'Invalid start_time format' });
+      }
+    }
+    
     // Special handling for status field, prevent setting to Expired manually
     if (status !== undefined) {
       // If user tries to set status to Expired, ignore this operation
@@ -263,23 +293,17 @@ router.put('/:id', auth, async (req, res) => {
         
         // Handle start_time based on status change
         try {
-          const validatedStartTime = validateStartTime(status, start_time, task.status);
-          taskFields.start_time = validatedStartTime;
-          console.log('Validated start_time:', validatedStartTime);
+          // 只有在未明确提供 start_time 时，才通过状态变更自动设置 start_time
+          if (start_time === undefined) {
+            const validatedStartTime = validateStartTime(status, task.start_time, task.status);
+            taskFields.start_time = validatedStartTime;
+            console.log('Validated start_time from status change:', validatedStartTime);
+          }
         } catch (error) {
           return res.status(400).json({ msg: error.message });
         }
       } else {
         console.log('User tried to set task status to Expired manually, ignored');
-      }
-    } else if (start_time !== undefined) {
-      // Handle start_time update without status change
-      try {
-        const validatedStartTime = validateStartTime(task.status, start_time);
-        taskFields.start_time = validatedStartTime;
-        console.log('Validated start_time without status change:', validatedStartTime);
-      } catch (error) {
-        return res.status(400).json({ msg: error.message });
       }
     }
     
