@@ -34,9 +34,9 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
       const startDate = new Date(start_time);
       
       // 修复时区问题 - 使用用户选择的确切日期
-      const year = startDate.getFullYear();
-      const month = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
-      const day = startDate.getDate();
+      const startYear = startDate.getFullYear();
+      const startMonth = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const startDay = startDate.getDate();
       
       // Reset time part for date comparison (比较日期时忽略时间部分)
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -48,10 +48,8 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
       
       // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
       // 格式: YYYY-MM-DDT12:00:00Z (Z表示UTC时区)
-      const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      const fixedDate = new Date(fixedDateStr);
-      
-      return fixedDate;
+      const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+      return new Date(startDateStr);
     }
     // If no start_time provided when changing to In Progress, use current date
     else if (oldStatus !== 'In Progress') {
@@ -62,10 +60,8 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
       const day = currentDate.getDate();
       
       // 使用ISO字符串创建新日期
-      const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      const fixedDate = new Date(fixedDateStr);
-      
-      return fixedDate;
+      const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+      return new Date(todayDateStr);
     }
   }
   
@@ -74,15 +70,13 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     const startDate = new Date(start_time);
     
     // 修复时区问题 - 使用用户选择的确切日期
-    const year = startDate.getFullYear();
-    const month = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
-    const day = startDate.getDate();
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+    const startDay = startDate.getDate();
     
     // 使用ISO字符串创建新日期
-    const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-    const fixedDate = new Date(fixedDateStr);
-    
-    return fixedDate;
+    const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+    return new Date(startDateStr);
   }
   
   // For Completed and Expired status, keep the existing start_time
@@ -244,21 +238,20 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // 修复start_time时区问题
+    // 修复start_time时区问题，采用与deadline完全相同的处理方式
     let fixedStartTime = null;
     if (start_time && initialStatus !== 'Pending') {
       // 处理时区问题，确保日期不变
       let startTimeDate = new Date(start_time);
       
       // 修复时区问题 - 使用用户选择的确切日期
-      // 获取日期部分
-      const year = startTimeDate.getFullYear();
-      const month = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
-      const day = startTimeDate.getDate();
+      const startYear = startTimeDate.getFullYear();
+      const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const startDay = startTimeDate.getDate();
       
-      // 使用ISO字符串创建新日期
-      const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      fixedStartTime = new Date(fixedDateStr);
+      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+      fixedStartTime = new Date(startDateStr);
       
       console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress' && !start_time) {
@@ -268,9 +261,9 @@ router.post('/', auth, async (req, res) => {
       const month = now.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
       const day = now.getDate();
       
-      // 使用ISO字符串创建新日期
-      const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      fixedStartTime = new Date(fixedDateStr);
+      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+      fixedStartTime = new Date(todayDateStr);
     }
     
     const newTask = new Task({
@@ -330,7 +323,7 @@ router.put('/:id', auth, async (req, res) => {
       taskFields.deadline = new Date(deadlineDateStr);
     }
     
-    // 修复 start_time 的处理逻辑
+    // 修复 start_time 的处理逻辑，采用与deadline完全相同的处理方式
     // 检查 start_time 是否直接作为参数提供，与状态无关
     if (start_time !== undefined) {
       console.log('Directly processing start_time update:', start_time);
@@ -340,21 +333,19 @@ router.put('/:id', auth, async (req, res) => {
           taskFields.start_time = null;
           console.log('Setting start_time to null for Pending status');
         } else if (start_time) {
-          // 处理 start_time 时区问题
+          // 处理 start_time 时区问题，与deadline完全一致
           let startTimeDate = new Date(start_time);
           
           // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
-          // 获取日期部分
-          const year = startTimeDate.getFullYear();
-          const month = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
-          const day = startTimeDate.getDate();
+          const startYear = startTimeDate.getFullYear();
+          const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+          const startDay = startTimeDate.getDate();
           
-          // 使用ISO字符串创建新日期
-          const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-          const fixedDate = new Date(fixedDateStr);
+          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
+          taskFields.start_time = new Date(startDateStr);
           
-          taskFields.start_time = fixedDate;
-          console.log('New start_time set to:', fixedDate);
+          console.log('New start_time set to:', taskFields.start_time);
         } else {
           // 如果明确设置为null且状态不是Pending
           console.log('Warning: Setting start_time to null for non-Pending task');
@@ -494,15 +485,15 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
-          // 修复时区问题 - 使用ISO字符串创建新日期
+          // 修复时区问题 - 使用ISO字符串创建新日期，与deadline处理方式完全一致
           const currentDate = new Date();
           const year = currentDate.getFullYear();
           const month = currentDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
           const day = currentDate.getDate();
           
-          // 使用ISO字符串创建新日期
-          const fixedDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-          const fixedDate = new Date(fixedDateStr);
+          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+          const fixedDate = new Date(todayDateStr);
           
           await Task.updateOne(
             { _id: taskId },
