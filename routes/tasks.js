@@ -165,7 +165,17 @@ router.post('/', auth, async (req, res) => {
   try {
     // Check if user is trying to create an already expired task
     let initialStatus = status || 'Pending';
-    const deadlineDate = new Date(deadline);
+    
+    // 修复时区问题 - 处理deadline以保留用户选择的日期
+    let deadlineDate = new Date(deadline);
+    // 确保日期部分不受时区影响 - 设置为当天的23:59:59
+    deadlineDate = new Date(
+      deadlineDate.getFullYear(),
+      deadlineDate.getMonth(),
+      deadlineDate.getDate(),
+      23, 59, 59
+    );
+    
     const now = new Date();
     
     // If deadline is in the past, automatically set to Expired
@@ -187,7 +197,7 @@ router.post('/', auth, async (req, res) => {
     
     const newTask = new Task({
       priority,
-      deadline,
+      deadline: deadlineDate, // 使用修正后的deadline日期
       hours,
       details,
       status: initialStatus,
@@ -228,9 +238,21 @@ router.put('/:id', auth, async (req, res) => {
     // Build task fields object
     const taskFields = {};
     if (priority) taskFields.priority = priority;
-    if (deadline) taskFields.deadline = deadline;
     if (hours) taskFields.hours = hours;
     if (details) taskFields.details = details;
+    
+    // 修复时区问题 - 处理deadline
+    if (deadline) {
+      // 确保日期部分不受时区影响 - 设置为当天的23:59:59
+      let deadlineDate = new Date(deadline);
+      deadlineDate = new Date(
+        deadlineDate.getFullYear(),
+        deadlineDate.getMonth(),
+        deadlineDate.getDate(),
+        23, 59, 59
+      );
+      taskFields.deadline = deadlineDate;
+    }
     
     // Special handling for status field, prevent setting to Expired manually
     if (status !== undefined) {
@@ -265,7 +287,7 @@ router.put('/:id', auth, async (req, res) => {
     
     // Check deadline, if a new deadline is set, check if it's already expired
     if (deadline) {
-      const deadlineDate = new Date(deadline);
+      const deadlineDate = new Date(taskFields.deadline);
       const now = new Date();
       
       if (deadlineDate < now) {
