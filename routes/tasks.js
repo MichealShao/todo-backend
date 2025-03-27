@@ -6,15 +6,15 @@ const mongoose = require('mongoose');
 
 // Helper function to check if a task is expired
 const checkTaskExpired = (task) => {
-  // 获取当前日期（去除时间部分）
+  // Get current date (removing time part)
   const now = new Date();
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
-  // 获取任务截止日期（去除时间部分）
+  // Get task deadline date (removing time part)
   const deadline = new Date(task.deadline);
   const deadlineDate = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
   
-  // 只有当截止日期严格早于今天（不包括今天）才视为过期
+  // Only consider as expired if deadline is strictly before today (not including today)
   return deadlineDate < todayDate && task.status !== 'Expired';
 };
 
@@ -33,12 +33,12 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     if (start_time) {
       const startDate = new Date(start_time);
       
-      // 修复时区问题 - 使用用户选择的确切日期
+      // Fix timezone issue - use the exact date selected by user
       const startYear = startDate.getFullYear();
-      const startMonth = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const startMonth = startDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
       const startDay = startDate.getDate();
       
-      // Reset time part for date comparison (比较日期时忽略时间部分)
+      // Reset time part for date comparison (ignore time part when comparing dates)
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
       
@@ -46,20 +46,20 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
         throw new Error('Start time cannot be earlier than today');
       }
       
-      // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
-      // 格式: YYYY-MM-DDT12:00:00Z (Z表示UTC时区)
+      // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
+      // Format: YYYY-MM-DDT12:00:00Z (Z represents UTC timezone)
       const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
       return new Date(startDateStr);
     }
     // If no start_time provided when changing to In Progress, use current date
     else if (oldStatus !== 'In Progress') {
-      // 创建新日期，使用今天的日期，时间设为12:00（中午）
+      // Create new date using today's date, time set to 12:00 (noon)
       const currentDate = new Date();
       const year = currentDate.getFullYear();
-      const month = currentDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const month = currentDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
       const day = currentDate.getDate();
       
-      // 使用ISO字符串创建新日期
+      // Use ISO string to create new date
       const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
       return new Date(todayDateStr);
     }
@@ -69,12 +69,12 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
   if (start_time !== undefined && start_time !== null && status !== 'Pending') {
     const startDate = new Date(start_time);
     
-    // 修复时区问题 - 使用用户选择的确切日期
+    // Fix timezone issue - use the exact date selected by user
     const startYear = startDate.getFullYear();
-    const startMonth = startDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+    const startMonth = startDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
     const startDay = startDate.getDate();
     
-    // 使用ISO字符串创建新日期
+    // Use ISO string to create new date
     const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
     return new Date(startDateStr);
   }
@@ -88,14 +88,14 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
   try {
     // Only execute this operation after user authentication
     if (req.user && req.user.id) {
-      // 获取今天的日期（去除时间部分）
+      // Get today's date (removing time part)
       const now = new Date();
       const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
       // Find all tasks with deadline passed but status not yet set to Expired
       const tasksToUpdate = await Task.find({
         user: req.user.id,
-        deadline: { $lt: todayDate }, // 使用今天的日期（不含时间）作为比较
+        deadline: { $lt: todayDate }, // Use today's date (without time) for comparison
         status: { $ne: 'Expired' }
       });
       
@@ -209,20 +209,20 @@ router.post('/', auth, async (req, res) => {
     // Check if user is trying to create an already expired task
     let initialStatus = status || 'Pending';
     
-    // 修复时区问题 - 处理deadline以保留用户选择的日期
+    // Fix timezone issue - process deadline to preserve user's selected date
     let deadlineDate = new Date(deadline);
-    // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
+    // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
     const deadlineYear = deadlineDate.getFullYear();
-    const deadlineMonth = deadlineDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+    const deadlineMonth = deadlineDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
     const deadlineDay = deadlineDate.getDate();
     const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
     deadlineDate = new Date(deadlineDateStr);
     
-    // 获取今天的日期（去除时间部分）
+    // Get today's date (removing time part)
     const now = new Date();
     const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
-    // 获取截止日期（去除时间部分）
+    // Get deadline date (removing time part)
     const deadlineDateOnly = new Date(
       deadlineDate.getFullYear(), 
       deadlineDate.getMonth(), 
@@ -238,37 +238,37 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // 修复start_time时区问题，采用与deadline完全相同的处理方式
+    // Fix start_time timezone issue, using the same approach as deadline
     let fixedStartTime = null;
     if (start_time && initialStatus !== 'Pending') {
-      // 处理时区问题，确保日期不变
+      // Process timezone issue, ensure date remains unchanged
       let startTimeDate = new Date(start_time);
       
-      // 修复时区问题 - 使用用户选择的确切日期
+      // Fix timezone issue - use the exact date selected by user
       const startYear = startTimeDate.getFullYear();
-      const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const startMonth = startTimeDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
       const startDay = startTimeDate.getDate();
       
-      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      // Use ISO string to create new date, same approach as deadline
       const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
       fixedStartTime = new Date(startDateStr);
       
       console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress' && !start_time) {
-      // 如果状态是In Progress但没有提供start_time，使用当前时间
+      // If status is In Progress but no start_time provided, use current time
       const now = new Date();
       const year = now.getFullYear();
-      const month = now.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const month = now.getMonth() + 1; // Month needs +1 to get real month (1-12)
       const day = now.getDate();
       
-      // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+      // Use ISO string to create new date, same approach as deadline
       const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
       fixedStartTime = new Date(todayDateStr);
     }
     
     const newTask = new Task({
       priority,
-      deadline: deadlineDate, // 使用修正后的deadline日期
+      deadline: deadlineDate, // Use corrected deadline date
       hours,
       details,
       status: initialStatus,
@@ -312,42 +312,42 @@ router.put('/:id', auth, async (req, res) => {
     if (hours) taskFields.hours = hours;
     if (details) taskFields.details = details;
     
-    // 修复时区问题 - 处理deadline
+    // Fix timezone issue - process deadline
     if (deadline) {
-      // 使用ISO字符串创建新日期，固定为中午12:00，避免时区问题
+      // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
       let deadlineDate = new Date(deadline);
       const deadlineYear = deadlineDate.getFullYear();
-      const deadlineMonth = deadlineDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+      const deadlineMonth = deadlineDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
       const deadlineDay = deadlineDate.getDate();
       const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
       taskFields.deadline = new Date(deadlineDateStr);
     }
     
-    // 修复 start_time 的处理逻辑，采用与deadline完全相同的处理方式
-    // 检查 start_time 是否直接作为参数提供，与状态无关
+    // Fix start_time processing logic, using the same approach as deadline
+    // Check if start_time is provided directly as a parameter, regardless of status
     if (start_time !== undefined) {
       console.log('Directly processing start_time update:', start_time);
       try {
         if (status === 'Pending' || task.status === 'Pending' && status === undefined) {
-          // 如果当前状态是Pending或要更新为Pending，start_time应为null
+          // If current status is Pending or being updated to Pending, start_time should be null
           taskFields.start_time = null;
           console.log('Setting start_time to null for Pending status');
         } else if (start_time) {
-          // 处理 start_time 时区问题，与deadline完全一致
+          // Process start_time timezone issue, same approach as deadline
           let startTimeDate = new Date(start_time);
           
-          // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
+          // Fix timezone issue - use the exact date selected by user, unaffected by timezone
           const startYear = startTimeDate.getFullYear();
-          const startMonth = startTimeDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+          const startMonth = startTimeDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
           const startDay = startTimeDate.getDate();
           
-          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          // Use ISO string to create new date, same approach as deadline
           const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
           taskFields.start_time = new Date(startDateStr);
           
           console.log('New start_time set to:', taskFields.start_time);
         } else {
-          // 如果明确设置为null且状态不是Pending
+          // If explicitly set to null and status is not Pending
           console.log('Warning: Setting start_time to null for non-Pending task');
           taskFields.start_time = null;
         }
@@ -366,7 +366,7 @@ router.put('/:id', auth, async (req, res) => {
         
         // Handle start_time based on status change
         try {
-          // 只有在未明确提供 start_time 时，才通过状态变更自动设置 start_time
+          // Only automatically set start_time through status change if not explicitly provided
           if (start_time === undefined) {
             const validatedStartTime = validateStartTime(status, task.start_time, task.status);
             taskFields.start_time = validatedStartTime;
@@ -384,11 +384,11 @@ router.put('/:id', auth, async (req, res) => {
     
     // Check deadline, if a new deadline is set, check if it's already expired
     if (deadline) {
-      // 获取今天的日期（去除时间部分）
+      // Get today's date (removing time part)
       const now = new Date();
       const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
-      // 获取新截止日期（去除时间部分）
+      // Get new deadline date (removing time part)
       const deadlineDate = new Date(taskFields.deadline);
       const deadlineDateOnly = new Date(
         deadlineDate.getFullYear(), 
@@ -403,11 +403,11 @@ router.put('/:id', auth, async (req, res) => {
       }
     } else {
       // If deadline isn't updated, check if existing deadline is expired
-      // 获取今天的日期（去除时间部分）
+      // Get today's date (removing time part)
       const now = new Date();
       const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
-      // 获取现有截止日期（去除时间部分）
+      // Get existing deadline date (removing time part)
       const existingDeadline = new Date(task.deadline);
       const existingDeadlineDateOnly = new Date(
         existingDeadline.getFullYear(), 
@@ -485,13 +485,13 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
-          // 修复时区问题 - 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          // Fix timezone issue - use ISO string to create new date, same approach as deadline
           const currentDate = new Date();
           const year = currentDate.getFullYear();
-          const month = currentDate.getMonth() + 1; // 月份需要+1才是真实月份(1-12)
+          const month = currentDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
           const day = currentDate.getDate();
           
-          // 使用ISO字符串创建新日期，与deadline处理方式完全一致
+          // Use ISO string to create new date, same approach as deadline
           const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
           const fixedDate = new Date(todayDateStr);
           
