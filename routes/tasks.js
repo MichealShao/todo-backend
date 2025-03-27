@@ -31,7 +31,7 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
       const month = startDate.getMonth();
       const day = startDate.getDate();
       
-      // Reset time part for date comparison
+      // Reset time part for date comparison (比较日期时忽略时间部分)
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const startDateOnly = new Date(year, month, day);
       
@@ -39,25 +39,20 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
         throw new Error('Start time cannot be earlier than today');
       }
       
-      // 创建新日期，使用用户的年月日，时分秒保持不变
-      const fixedDate = new Date(startDate);
-      fixedDate.setFullYear(year, month, day);
+      // 创建新日期，使用用户的年月日，时间设为12:00（中午）
+      const fixedDate = new Date(year, month, day, 12, 0, 0);
       
       return fixedDate;
     }
     // If no start_time provided when changing to In Progress, use current date
     else if (oldStatus !== 'In Progress') {
-      // 创建新日期，确保日期不受时区影响
+      // 创建新日期，使用今天的日期，时间设为12:00（中午）
       const currentDate = new Date();
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth();
       const day = currentDate.getDate();
-      const hour = currentDate.getHours();
-      const minute = currentDate.getMinutes();
       
-      const fixedDate = new Date();
-      fixedDate.setFullYear(year, month, day);
-      fixedDate.setHours(hour, minute, 0, 0);
+      const fixedDate = new Date(year, month, day, 12, 0, 0);
       
       return fixedDate;
     }
@@ -72,9 +67,8 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     const month = startDate.getMonth();
     const day = startDate.getDate();
     
-    // 创建新日期，使用用户的年月日，时分秒保持不变
-    const fixedDate = new Date(startDate);
-    fixedDate.setFullYear(year, month, day);
+    // 创建新日期，使用用户的年月日，时间设为12:00（中午）
+    const fixedDate = new Date(year, month, day, 12, 0, 0);
     
     return fixedDate;
   }
@@ -207,12 +201,12 @@ router.post('/', auth, async (req, res) => {
     
     // 修复时区问题 - 处理deadline以保留用户选择的日期
     let deadlineDate = new Date(deadline);
-    // 确保日期部分不受时区影响 - 设置为当天的23:59:59
+    // 确保日期部分不受时区影响 - 设置为当天的12:00:00（中午）
     deadlineDate = new Date(
       deadlineDate.getFullYear(),
       deadlineDate.getMonth(),
       deadlineDate.getDate(),
-      23, 59, 59
+      12, 0, 0
     );
     
     const now = new Date();
@@ -238,14 +232,20 @@ router.post('/', auth, async (req, res) => {
       const month = startTimeDate.getMonth();
       const day = startTimeDate.getDate();
       
-      // 创建新日期，使用用户的年月日，时分秒保持不变
-      fixedStartTime = new Date(startTimeDate);
-      fixedStartTime.setFullYear(year, month, day);
+      // 创建新日期，使用用户的年月日，时间设为12:00（中午）
+      fixedStartTime = new Date(year, month, day, 12, 0, 0);
       
       console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress' && !start_time) {
       // 如果状态是In Progress但没有提供start_time，使用当前时间
-      fixedStartTime = new Date();
+      // 但仍然设置为当天的12:00
+      const now = new Date();
+      fixedStartTime = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        12, 0, 0
+      );
     }
     
     const newTask = new Task({
@@ -296,13 +296,13 @@ router.put('/:id', auth, async (req, res) => {
     
     // 修复时区问题 - 处理deadline
     if (deadline) {
-      // 确保日期部分不受时区影响 - 设置为当天的23:59:59
+      // 确保日期部分不受时区影响 - 设置为当天的12:00:00（中午）
       let deadlineDate = new Date(deadline);
       deadlineDate = new Date(
         deadlineDate.getFullYear(),
         deadlineDate.getMonth(),
         deadlineDate.getDate(),
-        23, 59, 59
+        12, 0, 0
       );
       taskFields.deadline = deadlineDate;
     }
@@ -326,9 +326,8 @@ router.put('/:id', auth, async (req, res) => {
           const month = startTimeDate.getMonth();
           const day = startTimeDate.getDate();
           
-          // 创建新日期，使用用户的年月日，时分秒保持不变
-          const fixedDate = new Date(startTimeDate);
-          fixedDate.setFullYear(year, month, day);
+          // 创建新日期，使用用户的年月日，时间统一设为12:00（中午）
+          const fixedDate = new Date(year, month, day, 12, 0, 0);
           
           taskFields.start_time = fixedDate;
           console.log('New start_time set to:', fixedDate);
@@ -455,18 +454,14 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
-          // 修复时区问题 - 使用用户当前日期，而不受时区影响
+          // 修复时区问题 - 使用当天的12:00（中午）
           const currentDate = new Date();
           const year = currentDate.getFullYear();
           const month = currentDate.getMonth();
           const day = currentDate.getDate();
-          const hour = currentDate.getHours();
-          const minute = currentDate.getMinutes();
           
-          // 创建新日期，确保日期不受时区影响
-          const fixedDate = new Date();
-          fixedDate.setFullYear(year, month, day);
-          fixedDate.setHours(hour, minute, 0, 0);
+          // 创建新日期，时间设为12:00
+          const fixedDate = new Date(year, month, day, 12, 0, 0);
           
           await Task.updateOne(
             { _id: taskId },
