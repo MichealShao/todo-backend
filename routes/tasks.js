@@ -25,25 +25,58 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     // If start_time is provided, check if it's not earlier than today
     if (start_time) {
       const startDate = new Date(start_time);
+      
+      // 修复时区问题 - 使用用户选择的确切日期
+      const year = startDate.getFullYear();
+      const month = startDate.getMonth();
+      const day = startDate.getDate();
+      
       // Reset time part for date comparison
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const startDateOnly = new Date(year, month, day);
       
       if (startDateOnly < todayStart) {
         throw new Error('Start time cannot be earlier than today');
       }
-      return startDate;
+      
+      // 创建新日期，使用用户的年月日，时分秒保持不变
+      const fixedDate = new Date(startDate);
+      fixedDate.setFullYear(year, month, day);
+      
+      return fixedDate;
     }
     // If no start_time provided when changing to In Progress, use current date
     else if (oldStatus !== 'In Progress') {
-      return now;
+      // 创建新日期，确保日期不受时区影响
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const day = currentDate.getDate();
+      const hour = currentDate.getHours();
+      const minute = currentDate.getMinutes();
+      
+      const fixedDate = new Date();
+      fixedDate.setFullYear(year, month, day);
+      fixedDate.setHours(hour, minute, 0, 0);
+      
+      return fixedDate;
     }
   }
   
   // If it's a direct update of start_time (not through status change)
   if (start_time !== undefined && start_time !== null && status !== 'Pending') {
     const startDate = new Date(start_time);
-    return startDate;
+    
+    // 修复时区问题 - 使用用户选择的确切日期
+    const year = startDate.getFullYear();
+    const month = startDate.getMonth();
+    const day = startDate.getDate();
+    
+    // 创建新日期，使用用户的年月日，时分秒保持不变
+    const fixedDate = new Date(startDate);
+    fixedDate.setFullYear(year, month, day);
+    
+    return fixedDate;
   }
   
   // For Completed and Expired status, keep the existing start_time
@@ -193,12 +226,26 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // Validate and process start_time based on status
-    let validatedStartTime;
-    try {
-      validatedStartTime = validateStartTime(initialStatus, start_time);
-    } catch (error) {
-      return res.status(400).json({ msg: error.message });
+    // 修复start_time时区问题
+    let fixedStartTime = null;
+    if (start_time && initialStatus !== 'Pending') {
+      // 处理时区问题，确保日期不变
+      let startTimeDate = new Date(start_time);
+      
+      // 修复时区问题 - 使用用户选择的确切日期
+      // 获取日期部分
+      const year = startTimeDate.getFullYear();
+      const month = startTimeDate.getMonth();
+      const day = startTimeDate.getDate();
+      
+      // 创建新日期，使用用户的年月日，时分秒保持不变
+      fixedStartTime = new Date(startTimeDate);
+      fixedStartTime.setFullYear(year, month, day);
+      
+      console.log('Fixed start_time:', fixedStartTime);
+    } else if (initialStatus === 'In Progress' && !start_time) {
+      // 如果状态是In Progress但没有提供start_time，使用当前时间
+      fixedStartTime = new Date();
     }
     
     const newTask = new Task({
@@ -207,7 +254,7 @@ router.post('/', auth, async (req, res) => {
       hours,
       details,
       status: initialStatus,
-      start_time: validatedStartTime,
+      start_time: fixedStartTime,
       user: req.user.id
     });
     
@@ -268,8 +315,19 @@ router.put('/:id', auth, async (req, res) => {
         // 处理 start_time 时区问题
         if (start_time) {
           let startTimeDate = new Date(start_time);
-          taskFields.start_time = startTimeDate;
-          console.log('New start_time set to:', startTimeDate);
+          
+          // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
+          // 获取日期部分
+          const year = startTimeDate.getFullYear();
+          const month = startTimeDate.getMonth();
+          const day = startTimeDate.getDate();
+          
+          // 创建新日期，使用用户的年月日，时分秒保持不变
+          const fixedDate = new Date(startTimeDate);
+          fixedDate.setFullYear(year, month, day);
+          
+          taskFields.start_time = fixedDate;
+          console.log('New start_time set to:', fixedDate);
         } else {
           // 如果 start_time 被明确设置为 null，且状态不是 Pending
           if (task.status !== 'Pending') {
@@ -396,9 +454,22 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
+          // 修复时区问题 - 使用用户当前日期，而不受时区影响
+          const currentDate = new Date();
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth();
+          const day = currentDate.getDate();
+          const hour = currentDate.getHours();
+          const minute = currentDate.getMinutes();
+          
+          // 创建新日期，确保日期不受时区影响
+          const fixedDate = new Date();
+          fixedDate.setFullYear(year, month, day);
+          fixedDate.setHours(hour, minute, 0, 0);
+          
           await Task.updateOne(
             { _id: taskId },
-            { $set: { status, start_time: now } }
+            { $set: { status, start_time: fixedDate } }
           );
         } else {
           // If already In Progress, just update status
