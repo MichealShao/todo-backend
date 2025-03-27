@@ -309,11 +309,15 @@ router.put('/:id', auth, async (req, res) => {
     
     // 修复 start_time 的处理逻辑
     // 检查 start_time 是否直接作为参数提供，与状态无关
-    if (start_time !== undefined && task.status !== 'Pending') {
+    if (start_time !== undefined) {
       console.log('Directly processing start_time update:', start_time);
       try {
-        // 处理 start_time 时区问题
-        if (start_time) {
+        if (status === 'Pending' || task.status === 'Pending' && status === undefined) {
+          // 如果当前状态是Pending或要更新为Pending，start_time应为null
+          taskFields.start_time = null;
+          console.log('Setting start_time to null for Pending status');
+        } else if (start_time) {
+          // 处理 start_time 时区问题
           let startTimeDate = new Date(start_time);
           
           // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
@@ -329,12 +333,9 @@ router.put('/:id', auth, async (req, res) => {
           taskFields.start_time = fixedDate;
           console.log('New start_time set to:', fixedDate);
         } else {
-          // 如果 start_time 被明确设置为 null，且状态不是 Pending
-          if (task.status !== 'Pending') {
-            console.log('Warning: Cannot set start_time to null for non-Pending tasks');
-          } else {
-            taskFields.start_time = null;
-          }
+          // 如果明确设置为null且状态不是Pending
+          console.log('Warning: Setting start_time to null for non-Pending task');
+          taskFields.start_time = null;
         }
       } catch (error) {
         console.error('Error processing start_time:', error);
