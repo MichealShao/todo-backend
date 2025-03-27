@@ -11,6 +11,52 @@ const checkTaskExpired = (task) => {
   return deadline < now && task.status !== 'Expired';
 };
 
+// Helper function to fix date timezone issues
+const fixDateTimezone = (dateString) => {
+  if (!dateString) return null;
+  
+  try {
+    // 解析日期字符串
+    let date;
+    if (typeof dateString === 'string') {
+      // 如果是字符串格式的日期，首先尝试解析
+      if (dateString.includes('T')) {
+        // ISO格式，例如：2025-03-27T00:00:00.000Z
+        const parts = dateString.split('T')[0].split('-');
+        if (parts.length === 3) {
+          // 使用本地时间创建日期（避免时区转换）
+          date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
+        } else {
+          date = new Date(dateString);
+        }
+      } else if (dateString.includes('-')) {
+        // 简单日期格式，例如：2025-03-27
+        const parts = dateString.split('-');
+        if (parts.length === 3) {
+          // 使用本地时间创建日期（避免时区转换）
+          date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
+        } else {
+          date = new Date(dateString);
+        }
+      } else {
+        // 其他格式，使用标准解析
+        date = new Date(dateString);
+      }
+    } else if (dateString instanceof Date) {
+      // 如果已经是Date对象
+      date = new Date(dateString);
+    } else {
+      return null;
+    }
+    
+    // 返回固定在当天中午的日期（避免时区问题）
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0);
+  } catch (error) {
+    console.error('日期解析错误:', error);
+    return null;
+  }
+};
+
 // Helper function to validate start_time based on status
 const validateStartTime = (status, start_time, oldStatus = null) => {
   const now = new Date();
@@ -24,59 +70,31 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
   if (status === 'In Progress') {
     // If start_time is provided, check if it's not earlier than today
     if (start_time) {
-      const startDate = new Date(start_time);
+      // 使用修复的日期处理方法
+      const fixedDate = fixDateTimezone(start_time);
       
-      // 修复时区问题 - 使用用户选择的确切日期
-      const year = startDate.getFullYear();
-      const month = startDate.getMonth();
-      const day = startDate.getDate();
-      
-      // Reset time part for date comparison
+      // 今天的日期（只保留日期部分）
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startDateOnly = new Date(year, month, day);
+      
+      // 只比较日期部分
+      const startDateOnly = new Date(fixedDate.getFullYear(), fixedDate.getMonth(), fixedDate.getDate());
       
       if (startDateOnly < todayStart) {
         throw new Error('Start time cannot be earlier than today');
       }
       
-      // 创建新日期，使用用户的年月日，时分秒保持不变
-      const fixedDate = new Date(startDate);
-      fixedDate.setFullYear(year, month, day);
-      
       return fixedDate;
     }
     // If no start_time provided when changing to In Progress, use current date
     else if (oldStatus !== 'In Progress') {
-      // 创建新日期，确保日期不受时区影响
-      const currentDate = new Date();
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-      const day = currentDate.getDate();
-      const hour = currentDate.getHours();
-      const minute = currentDate.getMinutes();
-      
-      const fixedDate = new Date();
-      fixedDate.setFullYear(year, month, day);
-      fixedDate.setHours(hour, minute, 0, 0);
-      
-      return fixedDate;
+      // 使用当前日期，但固定在中午
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
     }
   }
   
   // If it's a direct update of start_time (not through status change)
   if (start_time !== undefined && start_time !== null && status !== 'Pending') {
-    const startDate = new Date(start_time);
-    
-    // 修复时区问题 - 使用用户选择的确切日期
-    const year = startDate.getFullYear();
-    const month = startDate.getMonth();
-    const day = startDate.getDate();
-    
-    // 创建新日期，使用用户的年月日，时分秒保持不变
-    const fixedDate = new Date(startDate);
-    fixedDate.setFullYear(year, month, day);
-    
-    return fixedDate;
+    return fixDateTimezone(start_time);
   }
   
   // For Completed and Expired status, keep the existing start_time
@@ -206,14 +224,9 @@ router.post('/', auth, async (req, res) => {
     let initialStatus = status || 'Pending';
     
     // 修复时区问题 - 处理deadline以保留用户选择的日期
-    let deadlineDate = new Date(deadline);
-    // 确保日期部分不受时区影响 - 设置为当天的23:59:59
-    deadlineDate = new Date(
-      deadlineDate.getFullYear(),
-      deadlineDate.getMonth(),
-      deadlineDate.getDate(),
-      23, 59, 59
-    );
+    let deadlineDate = fixDateTimezone(deadline);
+    // 将截止时间设置为当天的23:59:59
+    deadlineDate.setHours(23, 59, 59);
     
     const now = new Date();
     
@@ -226,31 +239,20 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // 修复start_time时区问题
+    // 处理start_time
     let fixedStartTime = null;
     if (start_time && initialStatus !== 'Pending') {
-      // 处理时区问题，确保日期不变
-      let startTimeDate = new Date(start_time);
-      
-      // 修复时区问题 - 使用用户选择的确切日期
-      // 获取日期部分
-      const year = startTimeDate.getFullYear();
-      const month = startTimeDate.getMonth();
-      const day = startTimeDate.getDate();
-      
-      // 创建新日期，使用用户的年月日，时分秒保持不变
-      fixedStartTime = new Date(startTimeDate);
-      fixedStartTime.setFullYear(year, month, day);
-      
+      // 使用修复的日期处理方法
+      fixedStartTime = fixDateTimezone(start_time);
       console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress' && !start_time) {
-      // 如果状态是In Progress但没有提供start_time，使用当前时间
-      fixedStartTime = new Date();
+      // 使用当前日期，但固定在中午
+      fixedStartTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
     }
     
     const newTask = new Task({
       priority,
-      deadline: deadlineDate, // 使用修正后的deadline日期
+      deadline: deadlineDate,
       hours,
       details,
       status: initialStatus,
@@ -296,40 +298,24 @@ router.put('/:id', auth, async (req, res) => {
     
     // 修复时区问题 - 处理deadline
     if (deadline) {
-      // 确保日期部分不受时区影响 - 设置为当天的23:59:59
-      let deadlineDate = new Date(deadline);
-      deadlineDate = new Date(
-        deadlineDate.getFullYear(),
-        deadlineDate.getMonth(),
-        deadlineDate.getDate(),
-        23, 59, 59
-      );
+      // 使用更可靠的日期处理方法
+      let deadlineDate = fixDateTimezone(deadline);
+      // 设置为当天的23:59:59
+      deadlineDate.setHours(23, 59, 59);
       taskFields.deadline = deadlineDate;
     }
     
-    // 修复 start_time 的处理逻辑
-    // 检查 start_time 是否直接作为参数提供，与状态无关
+    // 处理start_time更新
     if (start_time !== undefined && task.status !== 'Pending') {
       console.log('Directly processing start_time update:', start_time);
       try {
-        // 处理 start_time 时区问题
         if (start_time) {
-          let startTimeDate = new Date(start_time);
-          
-          // 修复时区问题 - 使用用户选择的确切日期，而不受时区影响
-          // 获取日期部分
-          const year = startTimeDate.getFullYear();
-          const month = startTimeDate.getMonth();
-          const day = startTimeDate.getDate();
-          
-          // 创建新日期，使用用户的年月日，时分秒保持不变
-          const fixedDate = new Date(startTimeDate);
-          fixedDate.setFullYear(year, month, day);
-          
+          // 使用新的日期处理方法
+          const fixedDate = fixDateTimezone(start_time);
           taskFields.start_time = fixedDate;
           console.log('New start_time set to:', fixedDate);
         } else {
-          // 如果 start_time 被明确设置为 null，且状态不是 Pending
+          // 如果start_time被明确设置为null
           if (task.status !== 'Pending') {
             console.log('Warning: Cannot set start_time to null for non-Pending tasks');
           } else {
