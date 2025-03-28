@@ -22,51 +22,8 @@ const checkTaskExpired = (task) => {
 const validateStartTime = (status, start_time, oldStatus = null) => {
   const now = new Date();
   
-  // If status is Pending, start_time should be null
-  if (status === 'Pending') {
-    return null;
-  }
-  
-  // If status is changing to In Progress, validate start_time
-  if (status === 'In Progress') {
-    // If start_time is provided, check if it's not earlier than today
-    if (start_time) {
-      const startDate = new Date(start_time);
-      
-      // Fix timezone issue - use the exact date selected by user
-      const startYear = startDate.getFullYear();
-      const startMonth = startDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-      const startDay = startDate.getDate();
-      
-      // Reset time part for date comparison (ignore time part when comparing dates)
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-      
-      if (startDateOnly < todayStart) {
-        throw new Error('Start time cannot be earlier than today');
-      }
-      
-      // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
-      // Format: YYYY-MM-DDT12:00:00Z (Z represents UTC timezone)
-      const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
-      return new Date(startDateStr);
-    }
-    // If no start_time provided when changing to In Progress, use current date
-    else if (oldStatus !== 'In Progress') {
-      // Create new date using today's date, time set to 12:00 (noon)
-      const currentDate = new Date();
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-      const day = currentDate.getDate();
-      
-      // Use ISO string to create new date
-      const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      return new Date(todayDateStr);
-    }
-  }
-  
-  // If it's a direct update of start_time (not through status change)
-  if (start_time !== undefined && start_time !== null && status !== 'Pending') {
+  // If start_time is provided, validate it
+  if (start_time !== undefined && start_time !== null) {
     const startDate = new Date(start_time);
     
     // Fix timezone issue - use the exact date selected by user
@@ -74,13 +31,55 @@ const validateStartTime = (status, start_time, oldStatus = null) => {
     const startMonth = startDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
     const startDay = startDate.getDate();
     
-    // Use ISO string to create new date
+    // Check if the date is today
+    const isStartDateToday = 
+      startYear === now.getFullYear() && 
+      startMonth === now.getMonth() + 1 && 
+      startDay === now.getDate();
+    
+    // If it's today, use current time
+    if (isStartDateToday) {
+      return now;
+    }
+    
+    // Otherwise, set to noon (12:00) in UTC
     const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
     return new Date(startDateStr);
   }
   
-  // For Completed and Expired status, keep the existing start_time
+  // If status is changing to In Progress and no start_time provided
+  if (status === 'In Progress' && oldStatus !== 'In Progress') {
+    return now;
+  }
+  
+  // For other cases, keep the existing start_time
   return start_time;
+};
+
+// Helper function to process date with timezone consideration
+const processDate = (date, isToday = false) => {
+  const inputDate = new Date(date);
+  const now = new Date();
+  
+  // Get date parts
+  const year = inputDate.getFullYear();
+  const month = inputDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
+  const day = inputDate.getDate();
+  
+  // Check if the date is today
+  const isInputDateToday = 
+    year === now.getFullYear() && 
+    month === now.getMonth() + 1 && 
+    day === now.getDate();
+  
+  // If it's today and isToday flag is true, use current time
+  if (isToday && isInputDateToday) {
+    return now;
+  }
+  
+  // Otherwise, set to noon (12:00) in UTC
+  const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
+  return new Date(dateStr);
 };
 
 // Middleware to automatically update expired task status
@@ -209,14 +208,8 @@ router.post('/', auth, async (req, res) => {
     // Check if user is trying to create an already expired task
     let initialStatus = status || 'Pending';
     
-    // Fix timezone issue - process deadline to preserve user's selected date
-    let deadlineDate = new Date(deadline);
-    // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
-    const deadlineYear = deadlineDate.getFullYear();
-    const deadlineMonth = deadlineDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-    const deadlineDay = deadlineDate.getDate();
-    const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
-    deadlineDate = new Date(deadlineDateStr);
+    // Process deadline with timezone consideration
+    let deadlineDate = processDate(deadline, true);
     
     // Get today's date (removing time part)
     const now = new Date();
@@ -238,37 +231,19 @@ router.post('/', auth, async (req, res) => {
       initialStatus = 'Pending';
     }
     
-    // Fix start_time timezone issue, using the same approach as deadline
+    // Process start_time with timezone consideration
     let fixedStartTime = null;
-    if (start_time && initialStatus !== 'Pending') {
-      // Process timezone issue, ensure date remains unchanged
-      let startTimeDate = new Date(start_time);
-      
-      // Fix timezone issue - use the exact date selected by user
-      const startYear = startTimeDate.getFullYear();
-      const startMonth = startTimeDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-      const startDay = startTimeDate.getDate();
-      
-      // Use ISO string to create new date, same approach as deadline
-      const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
-      fixedStartTime = new Date(startDateStr);
-      
+    if (start_time !== undefined && start_time !== null) {
+      fixedStartTime = processDate(start_time, true);
       console.log('Fixed start_time:', fixedStartTime);
-    } else if (initialStatus === 'In Progress' && !start_time) {
+    } else if (initialStatus === 'In Progress') {
       // If status is In Progress but no start_time provided, use current time
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1; // Month needs +1 to get real month (1-12)
-      const day = now.getDate();
-      
-      // Use ISO string to create new date, same approach as deadline
-      const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-      fixedStartTime = new Date(todayDateStr);
+      fixedStartTime = now;
     }
     
     const newTask = new Task({
       priority,
-      deadline: deadlineDate, // Use corrected deadline date
+      deadline: deadlineDate,
       hours,
       details,
       status: initialStatus,
@@ -287,7 +262,7 @@ router.post('/', auth, async (req, res) => {
 // Update a task - PUT /api/tasks/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    console.log('Update task request body:', req.body); // Log complete request body for debugging
+    console.log('Update task request body:', req.body);
     
     // Extract all possible fields
     const { priority, deadline, hours, details, status, start_time } = req.body;
@@ -312,44 +287,22 @@ router.put('/:id', auth, async (req, res) => {
     if (hours) taskFields.hours = hours;
     if (details) taskFields.details = details;
     
-    // Fix timezone issue - process deadline
+    // Process deadline with timezone consideration
     if (deadline) {
-      // Use ISO string to create new date, fixed at noon 12:00, avoiding timezone issues
-      let deadlineDate = new Date(deadline);
-      const deadlineYear = deadlineDate.getFullYear();
-      const deadlineMonth = deadlineDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-      const deadlineDay = deadlineDate.getDate();
-      const deadlineDateStr = `${deadlineYear}-${deadlineMonth.toString().padStart(2, '0')}-${deadlineDay.toString().padStart(2, '0')}T12:00:00.000Z`;
-      taskFields.deadline = new Date(deadlineDateStr);
+      taskFields.deadline = processDate(deadline, true);
     }
     
-    // Fix start_time processing logic, using the same approach as deadline
-    // Check if start_time is provided directly as a parameter, regardless of status
+    // Process start_time with timezone consideration
     if (start_time !== undefined) {
       console.log('Directly processing start_time update:', start_time);
       try {
-        if (status === 'Pending' || task.status === 'Pending' && status === undefined) {
-          // If current status is Pending or being updated to Pending, start_time should be null
+        if (start_time === null) {
+          // If explicitly set to null
           taskFields.start_time = null;
-          console.log('Setting start_time to null for Pending status');
-        } else if (start_time) {
-          // Process start_time timezone issue, same approach as deadline
-          let startTimeDate = new Date(start_time);
-          
-          // Fix timezone issue - use the exact date selected by user, unaffected by timezone
-          const startYear = startTimeDate.getFullYear();
-          const startMonth = startTimeDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-          const startDay = startTimeDate.getDate();
-          
-          // Use ISO string to create new date, same approach as deadline
-          const startDateStr = `${startYear}-${startMonth.toString().padStart(2, '0')}-${startDay.toString().padStart(2, '0')}T12:00:00.000Z`;
-          taskFields.start_time = new Date(startDateStr);
-          
-          console.log('New start_time set to:', taskFields.start_time);
+          console.log('Setting start_time to null');
         } else {
-          // If explicitly set to null and status is not Pending
-          console.log('Warning: Setting start_time to null for non-Pending task');
-          taskFields.start_time = null;
+          taskFields.start_time = processDate(start_time, true);
+          console.log('New start_time set to:', taskFields.start_time);
         }
       } catch (error) {
         console.error('Error processing start_time:', error);
@@ -485,19 +438,12 @@ router.put('/batch-update/status', auth, async (req, res) => {
         const task = await Task.findById(taskId);
         // Only set start_time if changing from a status that's not In Progress
         if (task.status !== 'In Progress') {
-          // Fix timezone issue - use ISO string to create new date, same approach as deadline
-          const currentDate = new Date();
-          const year = currentDate.getFullYear();
-          const month = currentDate.getMonth() + 1; // Month needs +1 to get real month (1-12)
-          const day = currentDate.getDate();
-          
-          // Use ISO string to create new date, same approach as deadline
-          const todayDateStr = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}T12:00:00.000Z`;
-          const fixedDate = new Date(todayDateStr);
+          // Use current time for start_time
+          const currentTime = new Date();
           
           await Task.updateOne(
             { _id: taskId },
-            { $set: { status, start_time: fixedDate } }
+            { $set: { status, start_time: currentTime } }
           );
         } else {
           // If already In Progress, just update status
