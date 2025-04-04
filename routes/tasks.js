@@ -142,35 +142,43 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
 // Get tasks with pagination, sorting and filtering - GET /api/tasks
 router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
   try {
+    console.log('GET /api/tasks request with query:', req.query);
+    
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const sortField = req.query.sortField || 'createdAt';
     const sortDirection = req.query.sortDirection || 'desc';
     
-    // 添加筛选条件
+    // Add filtering conditions
     const statusFilter = req.query.status ? req.query.status.split(',') : null;
     const priorityFilter = req.query.priority ? req.query.priority.split(',') : null;
+    
+    console.log('Status filter:', statusFilter);
+    console.log('Priority filter:', priorityFilter);
     
     const skip = (page - 1) * limit;
     
     // Build query conditions
     const query = { user: req.user.id };
     
-    // 添加状态筛选条件
+    // Add status filter to query if provided
     if (statusFilter && statusFilter.length > 0) {
       query.status = { $in: statusFilter };
+      console.log('Applied status filter:', statusFilter);
     }
     
-    // 添加优先级筛选条件
+    // Add priority filter to query if provided
     if (priorityFilter && priorityFilter.length > 0) {
       query.priority = { $in: priorityFilter };
+      console.log('Applied priority filter:', priorityFilter);
     }
     
-    console.log('Query conditions:', query);
+    console.log('Final query conditions:', JSON.stringify(query));
     
     // Build sort object
     const sort = {};
     sort[sortField] = sortDirection === 'asc' ? 1 : -1;
+    console.log('Sort criteria:', sort);
     
     // Count total matching tasks
     const total = await Task.countDocuments(query);
@@ -180,7 +188,9 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
       .sort(sort)
       .skip(skip)
       .limit(limit);
-      
+    
+    console.log(`Found ${tasks.length} tasks matching the criteria (total: ${total})`);
+    
     res.json({
       tasks,
       pagination: {
@@ -191,8 +201,11 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Error in GET /api/tasks:', err);
+    res.status(500).json({
+      msg: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
+    });
   }
 });
 
