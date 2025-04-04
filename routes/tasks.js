@@ -9,15 +9,23 @@ const checkTaskExpired = (task) => {
   // 获取客户端本地时间（使用服务器时间作为估计）
   const now = new Date();
   
-  // 创建今天日期（去掉时间部分）- 使用本地日期而不是UTC
+  // 创建今天日期加上宽限期（凌晨4点）- 使用本地日期
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+  if (now.getHours() < 4) {
+    todayDate.setDate(todayDate.getDate() - 1);
+  }
+  // 设置宽限期为凌晨4点
+  todayDate.setHours(4, 0, 0, 0);
   
   // 获取任务截止日期（去掉时间部分）
   const deadline = new Date(task.deadline);
   const deadlineDate = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
+  // 设置截止日期为当天的凌晨4点
+  deadlineDate.setHours(4, 0, 0, 0);
   
-  // 确保截止日期使用的是本地日期而不是UTC
-  // 只有截止日期严格早于今天（不包括今天）且状态不是Expired，才算作过期
+  // 只有截止日期严格早于今天的凌晨4点（不包括今天）且状态不是Expired，才算作过期
+  console.log('Checking expiration: deadline date:', deadlineDate, 'today with grace period:', todayDate);
   return deadlineDate < todayDate && task.status !== 'Expired';
 };
 
@@ -93,17 +101,21 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
       // 获取本地时间（使用服务器时间作为估计）
       const now = new Date();
       
-      // 获取今天的日期（不包括时间）- 使用本地日期
+      // 获取今天的日期并添加宽限期（凌晨4点）
       const todayDate = new Date();
-      // 设置为今天的 00:00:00
-      todayDate.setHours(0, 0, 0, 0);
+      // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+      if (now.getHours() < 4) {
+        todayDate.setDate(todayDate.getDate() - 1);
+      }
+      // 设置为凌晨4点
+      todayDate.setHours(4, 0, 0, 0);
       
-      console.log('Current date for expiration check:', todayDate);
+      console.log('Current date for expiration check with grace period (4am):', todayDate);
       
       // 查找所有截止日期已过但状态尚未设置为已过期的任务
       const tasksToUpdate = await Task.find({
         user: req.user.id,
-        deadline: { $lt: todayDate }, // 使用今天日期（不包括时间）进行比较
+        deadline: { $lt: todayDate }, // 使用今天日期加宽限期（凌晨4点）进行比较
         status: { $ne: 'Expired' }
       });
       
@@ -228,23 +240,30 @@ router.post('/', auth, async (req, res) => {
     // Process deadline with timezone consideration
     let deadlineDate = processDate(deadline, true);
     
-    // 获取今天的日期（不包括时间）- 使用本地日期
+    // 获取本地时间
+    const now = new Date();
+    
+    // 获取今天的日期并添加宽限期（凌晨4点）
     const todayDate = new Date();
-    // 设置为今天的 00:00:00
-    todayDate.setHours(0, 0, 0, 0);
+    // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+    if (now.getHours() < 4) {
+      todayDate.setDate(todayDate.getDate() - 1);
+    }
+    // 设置为凌晨4点
+    todayDate.setHours(4, 0, 0, 0);
     
-    // 获取截止日期（不包括时间）
+    // 获取截止日期（不包括时间部分）
     const deadlineDateOnly = new Date(deadlineDate);
-    // 设置为截止日期的 00:00:00
-    deadlineDateOnly.setHours(0, 0, 0, 0);
+    // 设置为截止日期的凌晨4点
+    deadlineDateOnly.setHours(4, 0, 0, 0);
     
-    console.log('Today date for task creation:', todayDate);
-    console.log('Deadline date for comparison:', deadlineDateOnly);
+    console.log('Today date with grace period (4am) for task creation:', todayDate);
+    console.log('Deadline date with grace period (4am) for comparison:', deadlineDateOnly);
     
-    // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
+    // 只有当截止日期严格早于今天的凌晨4点（不包括今天）时，才自动设置为已过期
     if (deadlineDateOnly < todayDate) {
       initialStatus = 'Expired';
-      console.log('Task marked as expired because deadline is in the past');
+      console.log('Task marked as expired because deadline is in the past (before 4am grace period)');
     } 
     // Prevent users from manually setting status to Expired
     else if (initialStatus === 'Expired') {
@@ -357,40 +376,54 @@ router.put('/:id', auth, async (req, res) => {
     
     // Check deadline, if a new deadline is set, check if it's already expired
     if (deadline) {
-      // 获取今天的日期（不包括时间）- 使用本地日期
+      // 获取本地时间
+      const now = new Date();
+      
+      // 获取今天的日期并添加宽限期（凌晨4点）
       const todayDate = new Date();
-      // 设置为今天的 00:00:00
-      todayDate.setHours(0, 0, 0, 0);
+      // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+      if (now.getHours() < 4) {
+        todayDate.setDate(todayDate.getDate() - 1);
+      }
+      // 设置为凌晨4点
+      todayDate.setHours(4, 0, 0, 0);
       
-      // 获取新截止日期（不包括时间）
+      // 获取新截止日期并添加宽限期（凌晨4点）
       const deadlineDate = new Date(taskFields.deadline);
-      // 设置为截止日期的 00:00:00
+      // 设置为截止日期的凌晨4点
       const deadlineDateOnly = new Date(deadlineDate);
-      deadlineDateOnly.setHours(0, 0, 0, 0);
+      deadlineDateOnly.setHours(4, 0, 0, 0);
       
-      // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
+      // 只有当截止日期严格早于今天的凌晨4点（不包括今天）时，才自动设置为已过期
       if (deadlineDateOnly < todayDate) {
-        // If new deadline is strictly before today, automatically set to Expired
+        // If new deadline is strictly before today (with grace period), automatically set to Expired
         taskFields.status = 'Expired';
-        console.log('New deadline is in the past, automatically setting status to Expired');
+        console.log('New deadline is in the past (before 4am grace period), automatically setting status to Expired');
       }
     } else {
       // If deadline isn't updated, check if existing deadline is expired
-      // 获取今天的日期（不包括时间）- 使用本地日期
+      // 获取本地时间
+      const now = new Date();
+      
+      // 获取今天的日期并添加宽限期（凌晨4点）
       const todayDate = new Date();
-      // 设置为今天的 00:00:00
-      todayDate.setHours(0, 0, 0, 0);
+      // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+      if (now.getHours() < 4) {
+        todayDate.setDate(todayDate.getDate() - 1);
+      }
+      // 设置为凌晨4点
+      todayDate.setHours(4, 0, 0, 0);
       
-      // 获取现有截止日期（不包括时间）
+      // 获取现有截止日期并添加宽限期（凌晨4点）
       const existingDeadline = new Date(task.deadline);
-      // 设置为截止日期的 00:00:00
+      // 设置为截止日期的凌晨4点
       const existingDeadlineDateOnly = new Date(existingDeadline);
-      existingDeadlineDateOnly.setHours(0, 0, 0, 0);
+      existingDeadlineDateOnly.setHours(4, 0, 0, 0);
       
-      // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
+      // 只有当截止日期严格早于今天的凌晨4点（不包括今天）时，才自动设置为已过期
       if (existingDeadlineDateOnly < todayDate && task.status !== 'Expired') {
         taskFields.status = 'Expired';
-        console.log('Existing deadline is in the past, automatically setting status to Expired');
+        console.log('Existing deadline is in the past (before 4am grace period), automatically setting status to Expired');
       }
     }
 
