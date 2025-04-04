@@ -126,18 +126,26 @@ router.get('/', auth, autoUpdateExpiredStatus, async (req, res) => {
     const sortField = req.query.sortField || 'createdAt';
     const sortDirection = req.query.sortDirection || 'desc';
     
-    // Added: Status filtering
+    // 添加筛选条件
     const statusFilter = req.query.status ? req.query.status.split(',') : null;
+    const priorityFilter = req.query.priority ? req.query.priority.split(',') : null;
     
     const skip = (page - 1) * limit;
     
     // Build query conditions
     const query = { user: req.user.id };
     
-    // Add status filter to query if provided
+    // 添加状态筛选条件
     if (statusFilter && statusFilter.length > 0) {
       query.status = { $in: statusFilter };
     }
+    
+    // 添加优先级筛选条件
+    if (priorityFilter && priorityFilter.length > 0) {
+      query.priority = { $in: priorityFilter };
+    }
+    
+    console.log('Query conditions:', query);
     
     // Build sort object
     const sort = {};

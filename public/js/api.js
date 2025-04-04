@@ -101,13 +101,18 @@ class TodoApi {
   }
 
   // Get all tasks with pagination, sorting and filtering
-  async getTasks(page = 1, limit = 20, sortField = 'priority', sortDirection = 'desc', statusFilter = null) {
+  async getTasks(page = 1, limit = 20, sortField = 'priority', sortDirection = 'desc', statusFilter = null, priorityFilter = null) {
     try {
       let url = `${this.tasksUrl}?page=${page}&limit=${limit}&sortField=${sortField}&sortDirection=${sortDirection}`;
       
       // Add status filter parameters
       if (statusFilter && statusFilter.length > 0) {
         url += `&status=${statusFilter.join(',')}`;
+      }
+      
+      // Add priority filter parameters
+      if (priorityFilter && priorityFilter.length > 0) {
+        url += `&priority=${priorityFilter.join(',')}`;
       }
       
       const response = await fetch(url, {
