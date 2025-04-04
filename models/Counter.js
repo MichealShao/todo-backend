@@ -1,34 +1,34 @@
 const mongoose = require('mongoose');
 
-// Counter模型用于跟踪各种ID的最大值
+// Counter model for tracking various ID sequences
 const CounterSchema = new mongoose.Schema({
-  // 计数器名称（例如'task'用于任务ID）
+  // Counter name (e.g., 'task' for task IDs)
   name: { 
     type: String, 
     required: true, 
     unique: true 
   },
-  // 当前计数值
+  // Current counter value
   value: { 
     type: Number, 
     default: 0 
   },
-  // 最后更新时间
+  // Last update timestamp
   updatedAt: { 
     type: Date, 
     default: Date.now 
   }
 });
 
-// 获取下一个ID值并自动更新计数器
+// Get next ID value and automatically update counter
 CounterSchema.statics.getNextValue = async function(counterName) {
-  // 使用findOneAndUpdate原子操作来获取并更新计数器
+  // Use findOneAndUpdate atomic operation to get and update counter
   const counter = await this.findOneAndUpdate(
     { name: counterName },
     { $inc: { value: 1 }, updatedAt: Date.now() },
     { 
-      new: true, // 返回更新后的文档
-      upsert: true // 如果计数器不存在则创建
+      new: true, // Return updated document
+      upsert: true // Create counter if it doesn't exist
     }
   );
   

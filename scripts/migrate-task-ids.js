@@ -1,4 +1,4 @@
-// 任务ID迁移脚本
+// Task ID migration script
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Task = require('../models/Task');
@@ -6,60 +6,60 @@ const Counter = require('../models/Counter');
 
 async function migrateTaskIds() {
   try {
-    // 连接到MongoDB
-    console.log('正在连接到数据库...');
+    // Connect to MongoDB
+    console.log('Connecting to database...');
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log('数据库连接成功');
+    console.log('Database connection successful');
 
-    // 获取所有任务并按创建时间排序
+    // Get all tasks sorted by creation time
     const tasks = await Task.find({}).sort({ createdAt: 1 });
-    console.log(`找到 ${tasks.length} 个任务需要迁移`);
+    console.log(`Found ${tasks.length} tasks that need migration`);
 
-    // 重置任务ID计数器
+    // Reset task ID counter
     await Counter.findOneAndUpdate(
       { name: 'task' },
       { value: 0 },
       { upsert: true }
     );
 
-    // 为每个任务分配ID
+    // Assign ID to each task
     let counter = 0;
     for (const task of tasks) {
       counter++;
-      // 如果任务已有ID，则跳过
+      // Skip tasks that already have IDs
       if (task.taskId) {
-        console.log(`任务 ${task._id} 已有ID ${task.taskId}，跳过`);
-        // 更新计数器至最大值
+        console.log(`Task ${task._id} already has ID ${task.taskId}, skipping`);
+        // Update counter to max value
         if (task.taskId > counter) {
           counter = task.taskId;
         }
         continue;
       }
       
-      // 分配新ID
+      // Assign new ID
       task.taskId = counter;
       await task.save();
-      console.log(`任务 ${task._id} 分配ID: ${counter}`);
+      console.log(`Task ${task._id} assigned ID: ${counter}`);
     }
 
-    // 更新计数器为当前最大值
+    // Update counter to current max value
     await Counter.findOneAndUpdate(
       { name: 'task' },
       { value: counter },
       { upsert: true }
     );
-    console.log(`计数器更新为当前最大值: ${counter}`);
+    console.log(`Counter updated to current max value: ${counter}`);
 
-    console.log('任务ID迁移完成');
+    console.log('Task ID migration completed');
   } catch (error) {
-    console.error('迁移过程中出错:', error);
+    console.error('Error during migration:', error);
   } finally {
-    // 关闭数据库连接
+    // Close database connection
     await mongoose.connection.close();
-    console.log('数据库连接已关闭');
+    console.log('Database connection closed');
     process.exit(0);
   }
 }
 
-// 执行迁移
+// Execute migration
 migrateTaskIds(); 

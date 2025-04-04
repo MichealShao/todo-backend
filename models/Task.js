@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const Counter = require('./Counter');
 
 const TaskSchema = new mongoose.Schema({
-  // 任务ID（自动递增）
+  // Task ID (auto-incrementing)
   taskId: { 
     type: Number, 
     unique: true,
@@ -42,12 +42,12 @@ const TaskSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// 保存前自动生成任务ID
+// Auto-generate task ID before saving
 TaskSchema.pre('save', async function(next) {
   try {
-    // 只有在新建任务时才生成ID
+    // Only generate ID for new tasks
     if (this.isNew) {
-      // 获取下一个任务ID
+      // Get next task ID
       const taskId = await Counter.getNextValue('task');
       this.taskId = taskId;
     }
