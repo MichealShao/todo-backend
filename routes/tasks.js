@@ -226,41 +226,44 @@ router.get('/:id', auth, async (req, res) => {
 
 // Add a new task - POST /api/tasks
 router.post('/', auth, async (req, res) => {
-  const { priority, deadline, hours, details, status, start_time } = req.body;
-  
-  // Validate input
-  if (!priority || !deadline || !hours || !details) {
-    return res.status(400).json({ msg: 'Please provide all required fields' });
-  }
-  
   try {
+    console.log('Creating new task with body:', JSON.stringify(req.body));
+    
+    const { priority, deadline, hours, details, status, start_time } = req.body;
+    
+    // Validate input
+    if (!priority || !deadline || !hours || !details) {
+      console.log('Missing required fields:', { priority, deadline, hours, details });
+      return res.status(400).json({ msg: 'Please provide all required fields' });
+    }
+    
     // Check if user is trying to create an already expired task
     let initialStatus = status || 'Pending';
     
     // Process deadline with timezone consideration
     let deadlineDate = processDate(deadline, true);
     
-    // 获取本地时间
+    // Get local time
     const now = new Date();
     
-    // 获取今天的日期并添加宽限期（凌晨4点）
+    // Get today's date with grace period (4am)
     const todayDate = new Date();
-    // 如果当前时间小于凌晨4点，则使用昨天的日期加上宽限期
+    // If current time is before 4am, use yesterday's date plus grace period
     if (now.getHours() < 4) {
       todayDate.setDate(todayDate.getDate() - 1);
     }
-    // 设置为凌晨4点
+    // Set to 4am
     todayDate.setHours(4, 0, 0, 0);
     
-    // 获取截止日期（不包括时间部分）
+    // Get deadline date (without time part)
     const deadlineDateOnly = new Date(deadlineDate);
-    // 设置为截止日期的凌晨4点
+    // Set to 4am on deadline date
     deadlineDateOnly.setHours(4, 0, 0, 0);
     
     console.log('Today date with grace period (4am) for task creation:', todayDate);
     console.log('Deadline date with grace period (4am) for comparison:', deadlineDateOnly);
     
-    // 只有当截止日期严格早于今天的凌晨4点（不包括今天）时，才自动设置为已过期
+    // Only set to expired if deadline is strictly before today's 4am (not including today)
     if (deadlineDateOnly < todayDate) {
       initialStatus = 'Expired';
       console.log('Task marked as expired because deadline is in the past (before 4am grace period)');
@@ -280,6 +283,16 @@ router.post('/', auth, async (req, res) => {
       fixedStartTime = new Date();
     }
     
+    console.log('Creating new task with fields:', {
+      priority,
+      deadline: deadlineDate,
+      hours,
+      details: details?.substring(0, 20) + '...',
+      status: initialStatus,
+      start_time: fixedStartTime,
+      user: req.user.id
+    });
+    
     const newTask = new Task({
       priority,
       deadline: deadlineDate,
@@ -290,11 +303,36 @@ router.post('/', auth, async (req, res) => {
       user: req.user.id
     });
     
+    console.log('Saving new task...');
     const task = await newTask.save();
+    console.log('Task saved successfully with ID:', task._id, 'and taskId:', task.taskId);
+    
     res.json(task);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Error creating task:', err);
+    
+    // Check for specific MongoDB errors
+    if (err.name === 'ValidationError') {
+      const validationErrors = Object.values(err.errors).map(error => error.message);
+      console.error('Validation errors:', validationErrors);
+      return res.status(400).json({ 
+        msg: 'Validation error', 
+        errors: validationErrors
+      });
+    }
+    
+    if (err.code === 11000) {
+      console.error('Duplicate key error:', err.keyValue);
+      return res.status(400).json({ 
+        msg: 'Duplicate key error', 
+        field: Object.keys(err.keyValue)[0]
+      });
+    }
+    
+    res.status(500).json({
+      msg: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'An unexpected error occurred'
+    });
   }
 });
 

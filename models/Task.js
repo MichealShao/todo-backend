@@ -6,7 +6,7 @@ const TaskSchema = new mongoose.Schema({
   taskId: { 
     type: Number, 
     unique: true,
-    required: true 
+    required: false // Set to false since it will be auto-generated
   },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   priority: { 
@@ -50,9 +50,11 @@ TaskSchema.pre('save', async function(next) {
       // Get next task ID
       const taskId = await Counter.getNextValue('task');
       this.taskId = taskId;
+      console.log(`Generated new taskId: ${taskId} for task`);
     }
     next();
   } catch (error) {
+    console.error('Error generating taskId:', error);
     next(error);
   }
 });
