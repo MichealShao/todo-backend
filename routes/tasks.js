@@ -6,15 +6,18 @@ const mongoose = require('mongoose');
 
 // Helper function to check if a task is expired
 const checkTaskExpired = (task) => {
-  // Get current date (removing time part)
+  // 获取客户端本地时间（使用服务器时间作为估计）
   const now = new Date();
+  
+  // 创建今天日期（去掉时间部分）- 使用本地日期而不是UTC
   const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
-  // Get task deadline date (removing time part)
+  // 获取任务截止日期（去掉时间部分）
   const deadline = new Date(task.deadline);
   const deadlineDate = new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate());
   
-  // Only consider as expired if deadline is strictly before today (not including today)
+  // 确保截止日期使用的是本地日期而不是UTC
+  // 只有截止日期严格早于今天（不包括今天）且状态不是Expired，才算作过期
   return deadlineDate < todayDate && task.status !== 'Expired';
 };
 
@@ -87,21 +90,27 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
   try {
     // Only execute this operation after user authentication
     if (req.user && req.user.id) {
-      // Get today's date (removing time part)
+      // 获取本地时间（使用服务器时间作为估计）
       const now = new Date();
-      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
-      // Find all tasks with deadline passed but status not yet set to Expired
+      // 获取今天的日期（不包括时间）- 使用本地日期
+      const todayDate = new Date();
+      // 设置为今天的 00:00:00
+      todayDate.setHours(0, 0, 0, 0);
+      
+      console.log('Current date for expiration check:', todayDate);
+      
+      // 查找所有截止日期已过但状态尚未设置为已过期的任务
       const tasksToUpdate = await Task.find({
         user: req.user.id,
-        deadline: { $lt: todayDate }, // Use today's date (without time) for comparison
+        deadline: { $lt: todayDate }, // 使用今天日期（不包括时间）进行比较
         status: { $ne: 'Expired' }
       });
       
       if (tasksToUpdate.length > 0) {
         console.log(`Found ${tasksToUpdate.length} expired tasks, updating status`);
         
-        // Batch update these tasks to Expired status
+        // 批量更新这些任务为已过期状态
         await Task.updateMany(
           { 
             _id: { $in: tasksToUpdate.map(t => t._id) },
@@ -114,7 +123,7 @@ const autoUpdateExpiredStatus = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('Error updating expired status:', err);
-    next(); // Continue processing the request even if update fails
+    next(); // 即使更新失败，也继续处理请求
   }
 };
 
@@ -219,20 +228,23 @@ router.post('/', auth, async (req, res) => {
     // Process deadline with timezone consideration
     let deadlineDate = processDate(deadline, true);
     
-    // Get today's date (removing time part)
-    const now = new Date();
-    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // 获取今天的日期（不包括时间）- 使用本地日期
+    const todayDate = new Date();
+    // 设置为今天的 00:00:00
+    todayDate.setHours(0, 0, 0, 0);
     
-    // Get deadline date (removing time part)
-    const deadlineDateOnly = new Date(
-      deadlineDate.getFullYear(), 
-      deadlineDate.getMonth(), 
-      deadlineDate.getDate()
-    );
+    // 获取截止日期（不包括时间）
+    const deadlineDateOnly = new Date(deadlineDate);
+    // 设置为截止日期的 00:00:00
+    deadlineDateOnly.setHours(0, 0, 0, 0);
     
-    // If deadline is strictly before today, automatically set to Expired
+    console.log('Today date for task creation:', todayDate);
+    console.log('Deadline date for comparison:', deadlineDateOnly);
+    
+    // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
     if (deadlineDateOnly < todayDate) {
       initialStatus = 'Expired';
+      console.log('Task marked as expired because deadline is in the past');
     } 
     // Prevent users from manually setting status to Expired
     else if (initialStatus === 'Expired') {
@@ -246,7 +258,7 @@ router.post('/', auth, async (req, res) => {
       console.log('Fixed start_time:', fixedStartTime);
     } else if (initialStatus === 'In Progress') {
       // If status is In Progress but no start_time provided, use current time
-      fixedStartTime = now;
+      fixedStartTime = new Date();
     }
     
     const newTask = new Task({
@@ -345,18 +357,18 @@ router.put('/:id', auth, async (req, res) => {
     
     // Check deadline, if a new deadline is set, check if it's already expired
     if (deadline) {
-      // Get today's date (removing time part)
-      const now = new Date();
-      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      // 获取今天的日期（不包括时间）- 使用本地日期
+      const todayDate = new Date();
+      // 设置为今天的 00:00:00
+      todayDate.setHours(0, 0, 0, 0);
       
-      // Get new deadline date (removing time part)
+      // 获取新截止日期（不包括时间）
       const deadlineDate = new Date(taskFields.deadline);
-      const deadlineDateOnly = new Date(
-        deadlineDate.getFullYear(), 
-        deadlineDate.getMonth(), 
-        deadlineDate.getDate()
-      );
+      // 设置为截止日期的 00:00:00
+      const deadlineDateOnly = new Date(deadlineDate);
+      deadlineDateOnly.setHours(0, 0, 0, 0);
       
+      // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
       if (deadlineDateOnly < todayDate) {
         // If new deadline is strictly before today, automatically set to Expired
         taskFields.status = 'Expired';
@@ -364,18 +376,18 @@ router.put('/:id', auth, async (req, res) => {
       }
     } else {
       // If deadline isn't updated, check if existing deadline is expired
-      // Get today's date (removing time part)
-      const now = new Date();
-      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      // 获取今天的日期（不包括时间）- 使用本地日期
+      const todayDate = new Date();
+      // 设置为今天的 00:00:00
+      todayDate.setHours(0, 0, 0, 0);
       
-      // Get existing deadline date (removing time part)
+      // 获取现有截止日期（不包括时间）
       const existingDeadline = new Date(task.deadline);
-      const existingDeadlineDateOnly = new Date(
-        existingDeadline.getFullYear(), 
-        existingDeadline.getMonth(), 
-        existingDeadline.getDate()
-      );
+      // 设置为截止日期的 00:00:00
+      const existingDeadlineDateOnly = new Date(existingDeadline);
+      existingDeadlineDateOnly.setHours(0, 0, 0, 0);
       
+      // 只有当截止日期严格早于今天（不包括今天）时，才自动设置为已过期
       if (existingDeadlineDateOnly < todayDate && task.status !== 'Expired') {
         taskFields.status = 'Expired';
         console.log('Existing deadline is in the past, automatically setting status to Expired');
